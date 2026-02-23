@@ -15,49 +15,63 @@ class WelcomeCog(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         """
-        This event is triggered when a new member joins the server.
+        Triggered when a new member joins the server.
+        Sends a beautifully formatted embed welcome message.
         """
-        # This is our key debugging line. If this doesn't show up, the bot never received the event.
-        log.info(
-            f"on_member_join event triggered for user: {member.name} in guild: {member.guild.name}"
-        )
+        log.info(f"on_member_join event triggered for user: {member.name}")
 
         if member.bot:
-            log.warning(f"Member {member.name} is a bot. Ignoring.")
             return
 
         guild = member.guild
         welcome_channel = discord.utils.get(guild.text_channels, name="welcome")
         roles_channel = discord.utils.get(guild.text_channels, name="role-select")
 
-        if not welcome_channel:
-            log.error(f"Could not find #welcome channel in '{guild.name}'.")
+        if not welcome_channel or not roles_channel:
+            log.error(
+                f"Missing required channels in '{guild.name}'. Welcome/Role-select not found."
+            )
             return
 
-        if not roles_channel:
-            log.error(f"Could not find #role-select channel in '{guild.name}'.")
-            return
+        # --- CHIEF ENGINEER UI UPGRADE: DISCORD EMBEDS ---
 
-        message = (
-            f"Welcome to the server, {member.mention}! 🎉\n\n"
-            f"We're thrilled to have you here. To get started and unlock "
-            f"the rest of the channels, please head over to {roles_channel.mention} "
-            f"and select your interests!"
+        # 1. Create the Embed object
+        # We use a nice green color to match your 🌿 aesthetic
+        embed = discord.Embed(
+            title="Welcome to All Here 🌿",
+            description=(
+                "This is the community behind everything I build and stream.\n"
+                "Whether you’re here from a video, a stream, or just exploring — you’re welcome.\n\n"
+                "Jump in, share what you’re working on, or just hang out.\n"
+                "Glad you’re here."
+            ),
+            color=discord.Color.brand_green(),
         )
 
+        # 2. Add the "Call to Action" as a specific field
+        embed.add_field(
+            name="Next Steps",
+            value=f"👉 Head over to {roles_channel.mention} to unlock your channels!",
+            inline=False,
+        )
+
+        # 3. Add a personalized touch: The user's avatar in the top right corner
+        if member.avatar:
+            embed.set_thumbnail(url=member.avatar.url)
+
+        # Add a small footer
+        embed.set_footer(text="All Here | SamirHere")
+
         try:
-            await welcome_channel.send(message)
-            log.info(
-                f"Successfully sent welcome message for {member.name} in '{guild.name}'."
-            )
+            # We send the embed, but we also include 'content=member.mention' outside the embed.
+            # This ensures the user actually gets a ping notification so they see the message!
+            await welcome_channel.send(content=member.mention, embed=embed)
+            log.info(f"Successfully sent embed welcome message for {member.name}.")
+
         except discord.errors.Forbidden:
-            log.error(
-                f"Permission error: Cannot send message to #{welcome_channel.name} in '{guild.name}'. Check bot permissions."
-            )
+            log.error("Permission error: Cannot send messages to the welcome channel.")
         except Exception as e:
-            log.error(
-                "An unexpected error occurred when sending welcome message.", exc_info=e
-            )
+            log.error("An unexpected error occurred.", exc_info=e)
 
 
 def setup(bot):
