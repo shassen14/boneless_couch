@@ -32,17 +32,6 @@ async def on_ready():
     """This event is triggered when the bot successfully connects to Discord."""
     log.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
-    # --- DB INITIALIZATION ---
-    log.info("Connecting to Database...")
-    try:
-        # This will create our tables based on the models in models.py
-        # It ONLY creates them if they don't already exist.
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        log.info("Database tables verified/created successfully! 🗄️")
-    except Exception as e:
-        log.error("Failed to connect to the Database!", exc_info=e)
-
 
 def load_cogs():
     log.info("Attempting to load cogs...")
@@ -59,8 +48,5 @@ def load_cogs():
 
 
 if __name__ == "__main__":
-    # Make sure to import your models here so the Base knows about them before create_all runs!
-    import couchd.core.models
-
     load_cogs()
     bot.run(settings.DISCORD_BOT_TOKEN)
