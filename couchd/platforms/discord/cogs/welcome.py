@@ -3,6 +3,10 @@
 import discord
 import logging
 from discord.ext import commands
+from sqlalchemy import select
+from couchd.core.db import get_session
+from couchd.core.models import GuildConfig
+from couchd.core.constants import BrandColors
 
 # Get the logger for this specific cog
 log = logging.getLogger(__name__)
@@ -24,12 +28,31 @@ class WelcomeCog(commands.Cog):
             return
 
         guild = member.guild
-        welcome_channel = discord.utils.get(guild.text_channels, name="welcome")
-        roles_channel = discord.utils.get(guild.text_channels, name="role-select")
 
-        if not welcome_channel or not roles_channel:
+        try:
+            async with get_session() as session:
+                stmt = select(GuildConfig).where(GuildConfig.guild_id == guild.id)
+                result = await session.execute(stmt)
+                config = result.scalar_one_or_none()
+        except Exception as e:
+            log.error("Database error while fetching welcome config.", exc_info=e)
+            return
+
+        if not config or not config.welcome_channel_id:
+            log.warning(f"No welcome channel configured for guild '{guild.name}'.")
+            return
+
+        # Fetch actual Discord channel objects using the IDs from the DB
+        welcome_channel = guild.get_channel(config.welcome_channel_id)
+        roles_channel = (
+            guild.get_channel(config.role_select_channel_id)
+            if config.role_select_channel_id
+            else None
+        )
+
+        if not welcome_channel:
             log.error(
-                f"Missing required channels in '{guild.name}'. Welcome/Role-select not found."
+                f"Welcome channel ID {config.welcome_channel_id} not found in guild."
             )
             return
 
@@ -43,15 +66,16 @@ class WelcomeCog(commands.Cog):
                 "Jump in, share what you’re working on, or just hang out.\n"
                 "Glad you’re here."
             ),
-            color=discord.Color.brand_green(),
+            color=BrandColors.PRIMARY,
         )
 
         # 2. Add the "Call to Action" as a specific field
-        embed.add_field(
-            name="Next Steps",
-            value=f"👉 Head over to {roles_channel.mention} to unlock your channels!",
-            inline=False,
-        )
+        if roles_channel:
+            embed.add_field(
+                name="Next Steps",
+                value=f"👉 Head over to {roles_channel.mention} to unlock your channels!",
+                inline=False,
+            )
 
         # 3. Add a personalized touch: The user's avatar in the top right corner
         if member.avatar:

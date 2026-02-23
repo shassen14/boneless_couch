@@ -14,8 +14,13 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # --- Discord Bot Settings ---
+    # Discord Bot Settings
     DISCORD_BOT_TOKEN: str
+
+    # Twitch Bot Settings
+    TWITCH_CLIENT_ID: str
+    TWITCH_CLIENT_SECRET: str
+    TWITCH_TARGET_USERNAME: str
 
     # Database Settings
     DB_USER: str
@@ -23,6 +28,9 @@ class Settings(BaseSettings):
     DB_HOST: str
     DB_PORT: int = 5432  # Default to 5432 if not specified
     DB_NAME: str
+
+    # Configurable polling rate (defaults to 2 minutes if not in .env)
+    TWITCH_POLL_RATE_MINUTES: float = 2.0
 
 
 # Create a single, importable instance of our settings.
