@@ -33,8 +33,6 @@ class WelcomeCog(commands.Cog):
             )
             return
 
-        # --- CHIEF ENGINEER UI UPGRADE: DISCORD EMBEDS ---
-
         # 1. Create the Embed object
         # We use a nice green color to match your 🌿 aesthetic
         embed = discord.Embed(
