@@ -1,5 +1,12 @@
-
+# discord
 py-cord
+
+# configuration
 python-dotenv
 pydantic
 pydantic-settings
+
+# database
+sqlalchemy[asyncio]
+asyncpg 
+alembic

@@ -6,16 +6,13 @@ import logging
 from discord.ext import commands
 from couchd.core.config import settings
 from couchd.core.logger import setup_logging
+from couchd.core.db import engine, Base
 
 # Initialize our central logging system right at the start
 setup_logging()
 
 # Now we can grab a logger for this specific file
 log = logging.getLogger(__name__)
-
-# Define the "Intents" for our bot.
-# intents = discord.Intents.all()
-# bot = commands.Bot(command_prefix="/", intents=intents)
 
 # Start with the default, non-privileged intents
 intents = discord.Intents.default()
@@ -34,7 +31,17 @@ bot = commands.Bot(command_prefix="/", intents=intents)
 async def on_ready():
     """This event is triggered when the bot successfully connects to Discord."""
     log.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    log.info("------")
+
+    # --- DB INITIALIZATION ---
+    log.info("Connecting to Database...")
+    try:
+        # This will create our tables based on the models in models.py
+        # It ONLY creates them if they don't already exist.
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        log.info("Database tables verified/created successfully! 🗄️")
+    except Exception as e:
+        log.error("Failed to connect to the Database!", exc_info=e)
 
 
 def load_cogs():
@@ -52,5 +59,8 @@ def load_cogs():
 
 
 if __name__ == "__main__":
+    # Make sure to import your models here so the Base knows about them before create_all runs!
+    import couchd.core.models
+
     load_cogs()
     bot.run(settings.DISCORD_BOT_TOKEN)

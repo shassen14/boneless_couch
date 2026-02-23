@@ -15,11 +15,14 @@ class Settings(BaseSettings):
     )
 
     # --- Discord Bot Settings ---
-    # We define the required environment variables here.
-    # Pydantic will automatically read them from the .env file.
-    # If DISCORD_BOT_TOKEN is not found in the .env file,
-    # the program will raise a ValidationError on startup.
     DISCORD_BOT_TOKEN: str
+
+    # Database Settings
+    DB_USER: str
+    DB_PASSWORD: str
+    DB_HOST: str
+    DB_PORT: int = 5432  # Default to 5432 if not specified
+    DB_NAME: str
 
 
 # Create a single, importable instance of our settings.
