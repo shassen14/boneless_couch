@@ -8,10 +8,12 @@ from couchd.core.config import settings
 from couchd.core.db import get_session
 from couchd.core.models import StreamEvent
 from couchd.core.api_clients import YouTubeRSSClient
+from couchd.core.constants import CommandCooldowns
 from couchd.platforms.twitch.leetcode_client import LeetCodeClient
 from couchd.platforms.twitch.ad_manager import AdBudgetManager
 from couchd.platforms.twitch.metrics_tracker import ChatVelocityTracker
 from couchd.platforms.twitch.github_client import GitHubClient
+from couchd.platforms.twitch.cooldowns import CooldownManager
 from couchd.platforms.twitch.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
 from couchd.platforms.twitch.ad_messages import pick_ad_message
 
@@ -36,6 +38,7 @@ class BotCommands(commands.Component):
         self.metrics_tracker = metrics_tracker
         self.github_client = github_client
         self.youtube_client = youtube_client
+        self.cooldowns = CooldownManager()
 
     @commands.Component.listener()
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
@@ -45,12 +48,21 @@ class BotCommands(commands.Component):
         self.metrics_tracker.record_message()
 
     # ------------------------------------------------------------------
-    # !hi
+    # !commands
     # ------------------------------------------------------------------
 
-    @commands.command(name="hi")
-    async def hi_command(self, ctx: commands.Context):
-        await ctx.reply(f"Hello, {ctx.chatter.name}! I can hear you!")
+    @commands.command(name="commands")
+    async def commands_list(self, ctx: commands.Context):
+        """!commands — list all available bot commands."""
+        if self.cooldowns.check("commands", ctx.author.id, CommandCooldowns.COMMANDS):
+            return
+        self.cooldowns.record("commands", ctx.author.id)
+
+        public = "Commands: !lc (current problem) · !project (current project)"
+        if self.youtube_client:
+            public += " · !newvideo (latest YouTube video)"
+
+        await ctx.reply(public)
 
     # ------------------------------------------------------------------
     # !newvideo
@@ -59,6 +71,10 @@ class BotCommands(commands.Component):
     @commands.command(name="newvideo")
     async def newvideo_command(self, ctx: commands.Context):
         """!newvideo — show the title and link of the latest YouTube video."""
+        if self.cooldowns.check("newvideo", ctx.author.id, CommandCooldowns.NEWVIDEO):
+            return
+        self.cooldowns.record("newvideo", ctx.author.id)
+
         if not self.youtube_client:
             await ctx.reply("YouTube is not configured.")
             return
@@ -84,6 +100,10 @@ class BotCommands(commands.Component):
 
         # ---- Bare !lc: show current problem ----
         if len(args) < 2:
+            if self.cooldowns.check("lc", ctx.author.id, CommandCooldowns.LC):
+                return
+            self.cooldowns.record("lc", ctx.author.id)
+
             active_session = await get_active_session()
             if not active_session:
                 await ctx.reply("⚠️ No active stream session.")
@@ -179,6 +199,10 @@ class BotCommands(commands.Component):
 
         # ---- Bare !project: show current ----
         if len(args) < 2:
+            if self.cooldowns.check("project", ctx.author.id, CommandCooldowns.PROJECT):
+                return
+            self.cooldowns.record("project", ctx.author.id)
+
             active_session = await get_active_session()
             if not active_session:
                 await ctx.reply("⚠️ No active stream session.")

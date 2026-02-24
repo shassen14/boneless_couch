@@ -1,6 +1,7 @@
 # couchd/core/constants.py
 from enum import Enum
 import discord
+from dataclasses import dataclass
 
 
 class Platform(str, Enum):
@@ -32,8 +33,8 @@ class TwitchAdDuration(int, Enum):
 
 
 class AdConfig:
-    WINDOW_SECONDS = 3600          # 60-minute rolling window
-    WARNING_SECONDS = 60           # warn N seconds before auto-ad fires
+    WINDOW_SECONDS = 3600  # 60-minute rolling window
+    WARNING_SECONDS = 60  # warn N seconds before auto-ad fires
     MIN_STREAM_AGE_SECONDS = 5 * 60  # don't auto-ad in first 5 min
 
 
@@ -47,7 +48,7 @@ class ZerotracConfig:
 
 class ChatMetrics:
     VELOCITY_WINDOW_MINUTES = 2
-    HIGH_VELOCITY_THRESHOLD = 20   # msgs/min
+    HIGH_VELOCITY_THRESHOLD = 20  # msgs/min
 
 
 class GitHubConfig:
@@ -57,6 +58,19 @@ class GitHubConfig:
 class YouTubeConfig:
     RSS_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
     VIDEO_URL = "https://www.youtube.com/watch?v="
+
+
+@dataclass(frozen=True)
+class Cooldown:
+    user_seconds: int  # how long before the same user can run it again
+    global_seconds: int  # how long before anyone in chat can run it again
+
+
+class CommandCooldowns:
+    COMMANDS = Cooldown(user_seconds=60, global_seconds=30)
+    NEWVIDEO = Cooldown(user_seconds=120, global_seconds=60)
+    LC = Cooldown(user_seconds=15, global_seconds=5)
+    PROJECT = Cooldown(user_seconds=15, global_seconds=5)
 
 
 class BrandColors:
