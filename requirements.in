@@ -1,5 +1,7 @@
-# discord
+# social media: discord, twitch
 py-cord
+twitchio[starlette]
+
 
 # configuration
 python-dotenv

@@ -18,7 +18,7 @@ class StreamWatcherCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.twitch = TwitchClient()
-        self.target_username = settings.TWITCH_TARGET_USERNAME
+        self.channel = settings.TWITCH_CHANNEL
 
         self.was_live_last_check = False
         self.check_twitch_status.start()
@@ -30,20 +30,18 @@ class StreamWatcherCog(commands.Cog):
     async def check_twitch_status(self):
         await self.bot.wait_until_ready()
 
-        log.debug(
-            f"Checking {Platform.TWITCH.value} status for {self.target_username}..."
-        )
-        stream_data = await self.twitch.get_stream_status(self.target_username)
+        log.debug(f"Checking {Platform.TWITCH.value} status for {self.channel}...")
+        stream_data = await self.twitch.get_stream_status(self.channel)
 
         is_live_now = stream_data is not None
 
         if is_live_now and not self.was_live_last_check:
-            log.info(f"{self.target_username} went LIVE.")
+            log.info(f"{self.channel} went LIVE.")
             self.was_live_last_check = True
             await self.handle_stream_start(stream_data)
 
         elif not is_live_now and self.was_live_last_check:
-            log.info(f"{self.target_username} went OFFLINE.")
+            log.info(f"{self.channel} went OFFLINE.")
             self.was_live_last_check = False
             await self.handle_stream_end()
 
@@ -52,7 +50,7 @@ class StreamWatcherCog(commands.Cog):
         category = stream_data.get("game_name", StreamDefaults.CATEGORY.value)
 
         # Building URLs dynamically
-        stream_url = f"{TwitchConfig.BASE_URL}{self.target_username}"
+        stream_url = f"{TwitchConfig.BASE_URL}{self.channel}"
 
         raw_thumbnail = stream_data.get("thumbnail_url", "")
         thumbnail_url = raw_thumbnail.replace(
@@ -89,7 +87,7 @@ class StreamWatcherCog(commands.Cog):
                     channel = self.bot.get_channel(config.stream_updates_channel_id)
                     if channel:
                         embed = discord.Embed(
-                            title=f"🔴 {self.target_username} is LIVE on Twitch!",
+                            title=f"🔴 {self.channel} is LIVE on Twitch!",
                             description=f"**{title}**\nPlaying: {category}",
                             url=stream_url,
                             color=BrandColors.TWITCH,  # Uses standard Brand color

@@ -20,7 +20,12 @@ class Settings(BaseSettings):
     # Twitch Bot Settings
     TWITCH_CLIENT_ID: str
     TWITCH_CLIENT_SECRET: str
-    TWITCH_TARGET_USERNAME: str
+
+    TWITCH_BOT_TOKEN: str
+    TWITCH_BOT_ID: str
+
+    TWITCH_OWNER_ID: str
+    TWITCH_CHANNEL: str
 
     # Database Settings
     DB_USER: str

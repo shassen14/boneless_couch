@@ -21,6 +21,16 @@ class TwitchConfig:
     BASE_URL = "https://twitch.tv/"
 
 
+class TwitchAdDuration(int, Enum):
+    # Maps user-friendly numbers to Twitch allowed durations (30, 60, 90, 120, 150, 180)
+    SHORT = 30
+    ONE_MIN = 60
+    ONE_POINT_FIVE = 90
+    TWO_MIN = 120
+    TWO_POINT_FIVE = 150
+    THREE_MIN = 180
+
+
 class BrandColors:
     # Use discord.Color objects for easy integration with Embeds
     PRIMARY = discord.Color.brand_green()
