@@ -1,49 +1,71 @@
-# Twitch Bot Setup Guide
+# Twitch Bot Setup
 
-This guide covers how to set up the Twitch bot.
-
-**Recommendation:** It is highly recommended to create a separate, secondary Twitch account (e.g., `BonelessCouchBot`) to act as the bot. This looks more professional in chat than your main streamer account replying to itself.
+**Recommendation:** Use a separate bot account (e.g. `BonelessCouchBot`) rather than your
+main streamer account — it looks more professional in chat.
 
 ## 1. Register the Developer Application
 
-_Note: You can do this step on either your main or bot account._
-
 1. Go to the [Twitch Developer Console](https://dev.twitch.tv/console).
-2. Click **Register Your Application**.
-   - **Name:** Your bot's name.
-   - **OAuth Redirect URLs:** `http://localhost:4343/oauth` (twitchio v3 default).
-   - **Category:** `Chat Bot`
-3. Click **Manage** on your new app.
-4. Copy the **Client ID** and generate a **Client Secret**.
-5. Paste both into your `.env` file as `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`.
+2. Click **Register Your Application**:
+   - **Name:** Your bot's name
+   - **OAuth Redirect URL:** `http://localhost:4343/oauth`
+   - **Category:** Chat Bot
+3. Copy the **Client ID** and generate a **Client Secret** → paste into `.env` as
+   `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`.
 
-## 2. Authorize the Bot (First Run)
+## 2. Get the Bot User ID
 
-twitchio v3 handles the OAuth flow automatically via a built-in web server.
-
-1. Fill in `.env` with `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_BOT_ID`, `TWITCH_OWNER_ID`, and `TWITCH_CHANNEL`.
-2. Run the bot: `python -m couchd.platforms.twitch.main`
-3. Open a **Private/Incognito window** and log into Twitch as the **bot account**.
-4. Visit `http://localhost:4343/oauth` in that window.
-5. Authorize the app. The bot will save the token automatically and subscribe to chat.
-
-On subsequent runs the saved token is loaded automatically — no browser step needed.
-
-## 3. Get the Bot User ID
-
-TwitchIO v3 requires the numeric ID of your bot account.
-
-1. Ensure your `.env` has `TWITCH_BOT_TOKEN` and `TWITCH_CLIENT_ID` filled out.
-2. In your terminal, run our utility script:
+1. Fill in `TWITCH_BOT_TOKEN` and `TWITCH_CLIENT_ID` in `.env`.
+2. Run the utility script:
    ```bash
    uv run python scripts/get_twitch_bot_id.py
    ```
-3. Copy the outputted "Bot ID" into your `.env` file as `TWITCH_BOT_ID`.
+3. Copy the outputted ID → paste into `.env` as `TWITCH_BOT_ID`.
+
+## 3. Authorize the Bot (First Run)
+
+twitchio v3 handles OAuth via a built-in web server.
+
+1. Run the bot: `python -m couchd.platforms.twitch.main`
+2. Open a **private/incognito window**, log into Twitch as the **bot account**.
+3. Visit `http://localhost:4343/oauth` and authorize.
+4. The bot saves the token automatically. Subsequent runs load it without a browser step.
 
 ## 4. Grant Channel Permissions
 
-For the bot to run ads or manage chat, it needs privileges in your main stream channel.
+In your main stream channel's chat (logged in as the streamer):
 
-1. Go to your **main stream channel's chat** (logged in as the streamer).
-2. Type `/mod [YourBotAccountName]` and hit enter.
-3. Add your main channel name to the `.env` file as `TWITCH_CHANNEL`.
+```
+/mod YourBotAccountName
+```
+
+This allows the bot to run ads and manage chat.
+
+## 5. Configure `.env`
+
+```
+TWITCH_CLIENT_ID=""
+TWITCH_CLIENT_SECRET=""
+TWITCH_BOT_TOKEN=""
+TWITCH_BOT_ID=""
+TWITCH_OWNER_ID=""       # numeric ID of your streamer account
+TWITCH_CHANNEL=""        # your channel name (lowercase)
+TWITCH_AD_MINUTES_PER_HOUR=3
+
+# Optional — enables !newvideo command and post-ad video messages
+YOUTUBE_CHANNEL_ID=""
+```
+
+## 6. Chat Commands
+
+| Command | Who | Description |
+|---|---|---|
+| `!commands` | Everyone | List available commands |
+| `!lc` | Everyone | Show current LeetCode problem |
+| `!project` | Everyone | Show current GitHub project |
+| `!newvideo` | Everyone | Latest YouTube video title + link |
+| `!lc <url>` | Mod/Broadcaster | Log a LeetCode solve |
+| `!project <url>` | Mod/Broadcaster | Set active GitHub project |
+| `!ad [mins]` | Mod/Broadcaster | Run an ad (e.g. `!ad 1.5` for 90s) |
+
+Viewer commands are rate-limited (per-user and global cooldowns). Durations are in `CommandCooldowns` in `constants.py`.
