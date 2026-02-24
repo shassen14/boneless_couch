@@ -5,4 +5,5 @@ __pycache__/
 
 # Secrets
 .env
+.env.path
 .tio.tokens.json

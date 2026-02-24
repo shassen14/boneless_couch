@@ -11,27 +11,23 @@ _Note: You can do this step on either your main or bot account._
 1. Go to the [Twitch Developer Console](https://dev.twitch.tv/console).
 2. Click **Register Your Application**.
    - **Name:** Your bot's name.
-   - **OAuth Redirect URLs:** `http://localhost:3000` (Required for our token generation step).
+   - **OAuth Redirect URLs:** `http://localhost:4343/oauth` (twitchio v3 default).
    - **Category:** `Chat Bot`
 3. Click **Manage** on your new app.
 4. Copy the **Client ID** and generate a **Client Secret**.
 5. Paste both into your `.env` file as `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`.
 
-## 2. Generate the User Access Token (The "Key")
+## 2. Authorize the Bot (First Run)
 
-We must generate a token that links your Developer App to your Bot Account.
+twitchio v3 handles the OAuth flow automatically via a built-in web server.
 
-1. Open a **Private/Incognito window** in your browser.
-2. Log into Twitch using the **account you want the bot to type as** (e.g., your secondary bot account).
-3. Construct this exact URL, replacing `YOUR_CLIENT_ID_HERE` with your actual Client ID from step 1:
-   ```text
-   https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID_HERE&redirect_uri=http://localhost:3000&response_type=token&scope=chat:read+chat:edit+channel:manage:broadcast+channel:edit:commercial
-   ```
-4. Paste that URL into your incognito browser and hit Enter.
-5. Click **Authorize**.
-6. You will be redirected to a broken `localhost` page. **This is normal.**
-7. Look at the URL bar. Copy the text _after_ `access_token=` and _before_ `&scope=`.
-8. Paste this into your `.env` file as `TWITCH_BOT_TOKEN="oauth:your_copied_token"`.
+1. Fill in `.env` with `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_BOT_ID`, `TWITCH_OWNER_ID`, and `TWITCH_CHANNEL`.
+2. Run the bot: `python -m couchd.platforms.twitch.main`
+3. Open a **Private/Incognito window** and log into Twitch as the **bot account**.
+4. Visit `http://localhost:4343/oauth` in that window.
+5. Authorize the app. The bot will save the token automatically and subscribe to chat.
+
+On subsequent runs the saved token is loaded automatically — no browser step needed.
 
 ## 3. Get the Bot User ID
 

@@ -1,17 +1,35 @@
 # couchd/core/config.py
 
+import pathlib
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Project root is 3 levels up from this file (couchd/core/config.py).
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
+_ENV_PATH_FILE = _PROJECT_ROOT / ".env.path"
+
+if not _ENV_PATH_FILE.exists():
+    raise FileNotFoundError(
+        f"Missing {_ENV_PATH_FILE}. "
+        "Create it and put the absolute path to your .env file inside."
+    )
+
+_env_file = pathlib.Path(_ENV_PATH_FILE.read_text().strip())
+
+if not _env_file.exists():
+    raise FileNotFoundError(
+        f".env file not found at '{_env_file}' (read from {_ENV_PATH_FILE}). "
+        "Check that the path in .env.path is correct."
+    )
 
 
 class Settings(BaseSettings):
     """
     Manages all application settings.
-    Loads variables from a .env file and validates them.
+    Loads variables from the .env file whose path is in .env.path.
     """
 
-    # This tells Pydantic to look for a .env file in our project root.
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file_encoding="utf-8", extra="ignore"
     )
 
     # Discord Bot Settings
@@ -40,4 +58,4 @@ class Settings(BaseSettings):
 
 # Create a single, importable instance of our settings.
 # This instance will be created only once when the module is first imported.
-settings = Settings()
+settings = Settings(_env_file=str(_env_file))
