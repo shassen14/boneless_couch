@@ -11,7 +11,7 @@ from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession
 from couchd.core.constants import ChatMetrics
-from couchd.core.api_clients import TwitchClient
+from couchd.core.api_clients import TwitchClient, YouTubeRSSClient
 from couchd.platforms.twitch.leetcode_client import LeetCodeClient
 from couchd.platforms.twitch.ad_manager import AdBudgetManager
 from couchd.platforms.twitch.metrics_tracker import ChatVelocityTracker
@@ -38,7 +38,8 @@ class TwitchBot(commands.Bot):
         self.metrics_tracker = ChatVelocityTracker()
         self.github_client = GitHubClient()
         self.twitch_client = TwitchClient()
-        self.ad_scheduler = AdScheduler(self, self.ad_manager)
+        self.youtube_client = YouTubeRSSClient() if settings.YOUTUBE_CHANNEL_ID else None
+        self.ad_scheduler = AdScheduler(self, self.ad_manager, self.youtube_client)
 
     async def setup_hook(self) -> None:
         await self.lc_client.load_ratings()
@@ -50,6 +51,7 @@ class TwitchBot(commands.Bot):
                 self.ad_manager,
                 self.metrics_tracker,
                 self.github_client,
+                self.youtube_client,
             )
         )
 

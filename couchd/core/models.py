@@ -14,6 +14,7 @@ class GuildConfig(Base):
     role_select_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     stream_updates_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     video_updates_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    video_updates_role_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
 
 
 class StreamSession(Base):

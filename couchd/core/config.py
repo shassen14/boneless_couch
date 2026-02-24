@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     # Ad budget: how many minutes of ads are required per hour
     TWITCH_AD_MINUTES_PER_HOUR: int = 3
 
+    # YouTube (optional — omit to disable VideoWatcherCog)
+    YOUTUBE_CHANNEL_ID: str | None = None
+    YOUTUBE_POLL_RATE_MINUTES: float = 15.0
+
 
 # Create a single, importable instance of our settings.
 # This instance will be created only once when the module is first imported.

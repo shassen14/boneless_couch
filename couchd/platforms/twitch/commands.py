@@ -7,11 +7,13 @@ from sqlalchemy import select
 from couchd.core.config import settings
 from couchd.core.db import get_session
 from couchd.core.models import StreamEvent
+from couchd.core.api_clients import YouTubeRSSClient
 from couchd.platforms.twitch.leetcode_client import LeetCodeClient
 from couchd.platforms.twitch.ad_manager import AdBudgetManager
 from couchd.platforms.twitch.metrics_tracker import ChatVelocityTracker
 from couchd.platforms.twitch.github_client import GitHubClient
-from couchd.platforms.twitch.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration
+from couchd.platforms.twitch.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
+from couchd.platforms.twitch.ad_messages import pick_ad_message
 
 log = logging.getLogger(__name__)
 
@@ -26,12 +28,14 @@ class BotCommands(commands.Component):
         ad_manager: AdBudgetManager,
         metrics_tracker: ChatVelocityTracker,
         github_client: GitHubClient,
+        youtube_client: YouTubeRSSClient | None,
     ):
         self.bot = bot
         self.lc_client = lc_client
         self.ad_manager = ad_manager
         self.metrics_tracker = metrics_tracker
         self.github_client = github_client
+        self.youtube_client = youtube_client
 
     @commands.Component.listener()
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
@@ -47,6 +51,24 @@ class BotCommands(commands.Component):
     @commands.command(name="hi")
     async def hi_command(self, ctx: commands.Context):
         await ctx.reply(f"Hello, {ctx.chatter.name}! I can hear you!")
+
+    # ------------------------------------------------------------------
+    # !newvideo
+    # ------------------------------------------------------------------
+
+    @commands.command(name="newvideo")
+    async def newvideo_command(self, ctx: commands.Context):
+        """!newvideo — show the title and link of the latest YouTube video."""
+        if not self.youtube_client:
+            await ctx.reply("YouTube is not configured.")
+            return
+
+        video = await self.youtube_client.get_latest_video()
+        if not video:
+            await ctx.reply("Could not fetch the latest video right now.")
+            return
+
+        await ctx.reply(f"{video['title']} → {video['video_url']}")
 
     # ------------------------------------------------------------------
     # !lc
@@ -247,11 +269,11 @@ class BotCommands(commands.Component):
         args = ctx.content.split()
         if len(args) > 1:
             try:
-                minutes = int(args[1])
+                minutes = float(args[1])
             except ValueError:
-                await ctx.reply("Usage: !ad [minutes]")
+                await ctx.reply("Usage: !ad [minutes] — e.g. !ad 1.5 for 90s")
                 return
-            duration_seconds = clamp_to_ad_duration(minutes * 60)
+            duration_seconds = clamp_to_ad_duration(round(minutes * 60))
         else:
             remaining = await self.ad_manager.get_remaining(active_session.id)
             if remaining == 0:
@@ -270,6 +292,12 @@ class BotCommands(commands.Component):
         await self.ad_manager.log_ad(active_session.id, duration_seconds, vod_ts)
         self.ad_manager.cancel_pending()
 
-        minutes_run = duration_seconds // 60
-        await ctx.reply(f"🎬 Running {minutes_run}m ad. Time to stretch!")
+        whole_minutes, leftover_seconds = divmod(duration_seconds, 60)
+        duration_label = f"{whole_minutes}m {leftover_seconds}s" if leftover_seconds else f"{whole_minutes}m"
+        await ctx.reply(f"🎬 Running {duration_label} ad. Time to stretch!")
         log.info("Triggered %ds ad break.", duration_seconds)
+
+        latest_video = await self.youtube_client.get_latest_video() if self.youtube_client else None
+        ad_msg = pick_ad_message(latest_video)
+        if ad_msg:
+            await send_chat_message(self.bot, ad_msg)

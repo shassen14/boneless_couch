@@ -6,8 +6,10 @@ from datetime import datetime, timezone
 from couchd.core.config import settings
 from couchd.core.models import StreamSession
 from couchd.core.constants import AdConfig
+from couchd.core.api_clients import YouTubeRSSClient
 from couchd.platforms.twitch.ad_manager import AdBudgetManager
-from couchd.platforms.twitch.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration
+from couchd.platforms.twitch.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
+from couchd.platforms.twitch.ad_messages import pick_ad_message
 
 log = logging.getLogger(__name__)
 
@@ -18,9 +20,10 @@ class AdScheduler:
     is met before the 60-minute window closes.
     """
 
-    def __init__(self, bot, ad_manager: AdBudgetManager):
+    def __init__(self, bot, ad_manager: AdBudgetManager, youtube_client: YouTubeRSSClient | None):
         self._bot = bot
         self._ad_manager = ad_manager
+        self._youtube_client = youtube_client
 
     def start(self) -> None:
         asyncio.create_task(self._run_loop())
@@ -67,30 +70,30 @@ class AdScheduler:
     async def _warn_then_ad(self, session: StreamSession, duration_seconds: int) -> None:
         """Warn chat, wait, then fire the auto-ad."""
         try:
-            users = await self._bot.fetch_users(names=[settings.TWITCH_CHANNEL])
-            if not users:
-                log.warning("_warn_then_ad: could not fetch channel user.")
-                return
-            channel_user = users[0]
-
-            await channel_user.send_message(
-                sender_id=settings.TWITCH_BOT_ID,
-                message=f"⏰ Ad break in {AdConfig.WARNING_SECONDS}s — time to stretch!",
+            await send_chat_message(
+                self._bot,
+                f"⏰ Ad break in {AdConfig.WARNING_SECONDS}s — time to stretch!",
             )
             await asyncio.sleep(AdConfig.WARNING_SECONDS)
 
             clamped = clamp_to_ad_duration(duration_seconds)
-            await channel_user.start_commercial(length=clamped)
+            users = await self._bot.fetch_users(names=[settings.TWITCH_CHANNEL])
+            if not users:
+                log.warning("_warn_then_ad: could not fetch channel user to start commercial.")
+                return
+            await users[0].start_commercial(length=clamped)
 
             vod_ts = compute_vod_timestamp(session.start_time)
             await self._ad_manager.log_ad(session.id, clamped, vod_ts)
 
             minutes = clamped // 60
-            await channel_user.send_message(
-                sender_id=settings.TWITCH_BOT_ID,
-                message=f"🎬 Auto ad running ({minutes}m). Back soon!",
-            )
+            await send_chat_message(self._bot, f"🎬 Auto ad running ({minutes}m). Back soon!")
             log.info("Auto-ad complete: %ds at %s.", clamped, vod_ts)
+
+            latest_video = await self._youtube_client.get_latest_video() if self._youtube_client else None
+            ad_msg = pick_ad_message(latest_video)
+            if ad_msg:
+                await send_chat_message(self._bot, ad_msg)
         except asyncio.CancelledError:
             log.info("Auto-ad task cancelled (manual ad ran first).")
         except Exception:

@@ -108,6 +108,41 @@ class SetupCog(commands.Cog):
             ctx, channel, "video_updates_channel_id", "Video Updates Channel"
         )
 
+    @setup_group.command(
+        name="video_updates_role",
+        description="Set the role to ping when a new video is posted.",
+    )
+    async def set_video_updates_role(
+        self, ctx: discord.ApplicationContext, role: discord.Role
+    ):
+        await ctx.defer(ephemeral=True)
+        guild_id = ctx.guild.id
+
+        try:
+            async with get_session() as session:
+                stmt = select(GuildConfig).where(GuildConfig.guild_id == guild_id)
+                result = await session.execute(stmt)
+                config = result.scalar_one_or_none()
+
+                if not config:
+                    config = GuildConfig(guild_id=guild_id)
+                    session.add(config)
+
+                config.video_updates_role_id = role.id
+
+            embed = discord.Embed(
+                title="Configuration Updated ✅",
+                description=f"The **Video Updates Role** has been set to {role.mention}.",
+                color=BrandColors.SUCCESS,
+            )
+            await ctx.followup.send(embed=embed, ephemeral=True)
+            log.info(f"Guild {guild_id} updated config: video_updates_role_id = {role.id}")
+        except Exception as e:
+            log.error(f"Failed to update video_updates_role_id for guild {guild_id}", exc_info=e)
+            await ctx.followup.send(
+                "❌ An error occurred while saving to the database.", ephemeral=True
+            )
+
 
 def setup(bot):
     bot.add_cog(SetupCog(bot))

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from couchd.core.config import settings
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession
 from couchd.core.constants import Platform, TwitchAdDuration
@@ -31,6 +32,18 @@ async def get_active_session() -> StreamSession | None:
         )
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
+
+
+async def send_chat_message(bot, message: str) -> None:
+    """Send a standalone message to the streamer's channel."""
+    try:
+        users = await bot.fetch_users(names=[settings.TWITCH_CHANNEL])
+        if not users:
+            log.warning("send_chat_message: could not fetch channel user.")
+            return
+        await users[0].send_message(sender_id=settings.TWITCH_BOT_ID, message=message)
+    except Exception:
+        log.error("Failed to send chat message", exc_info=True)
 
 
 def clamp_to_ad_duration(seconds: int) -> int:

@@ -54,6 +54,11 @@ class GitHubConfig:
     API_BASE = "https://api.github.com/repos"
 
 
+class YouTubeConfig:
+    RSS_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+    VIDEO_URL = "https://www.youtube.com/watch?v="
+
+
 class BrandColors:
     # Use discord.Color objects for easy integration with Embeds
     PRIMARY = discord.Color.brand_green()
