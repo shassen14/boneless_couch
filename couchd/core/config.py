@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # Configurable polling rate (defaults to 2 minutes if not in .env)
     TWITCH_POLL_RATE_MINUTES: float = 2.0
 
+    # Ad budget: how many minutes of ads are required per hour
+    TWITCH_AD_MINUTES_PER_HOUR: int = 3
+
 
 # Create a single, importable instance of our settings.
 # This instance will be created only once when the module is first imported.

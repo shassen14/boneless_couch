@@ -31,6 +31,29 @@ class TwitchAdDuration(int, Enum):
     THREE_MIN = 180
 
 
+class AdConfig:
+    WINDOW_SECONDS = 3600          # 60-minute rolling window
+    WARNING_SECONDS = 60           # warn N seconds before auto-ad fires
+    MIN_STREAM_AGE_SECONDS = 5 * 60  # don't auto-ad in first 5 min
+
+
+class LeetCodeConfig:
+    GRAPHQL_URL = "https://leetcode.com/graphql"
+
+
+class ZerotracConfig:
+    RATINGS_URL = "https://raw.githubusercontent.com/zerotrac/leetcode_problem_rating/main/ratings.txt"
+
+
+class ChatMetrics:
+    VELOCITY_WINDOW_MINUTES = 2
+    HIGH_VELOCITY_THRESHOLD = 20   # msgs/min
+
+
+class GitHubConfig:
+    API_BASE = "https://api.github.com/repos"
+
+
 class BrandColors:
     # Use discord.Color objects for easy integration with Embeds
     PRIMARY = discord.Color.brand_green()
