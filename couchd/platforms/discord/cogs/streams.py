@@ -3,13 +3,15 @@ import discord
 from discord.ext import commands, tasks
 import logging
 import random
+from datetime import datetime, timezone
 
 from couchd.core.config import settings
 from couchd.core.api_clients import TwitchClient
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, GuildConfig
 from couchd.core.constants import Platform, StreamDefaults, TwitchConfig, BrandColors
-from sqlalchemy import select, update
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 log = logging.getLogger(__name__)
 
@@ -112,24 +114,118 @@ class StreamWatcherCog(commands.Cog):
             log.error("Failed to send Discord announcement", exc_info=e)
 
     async def handle_stream_end(self):
+        stream_session = None
+
+        # Step 1: Mark session inactive, set end_time, eager-load events
         try:
             async with get_session() as session:
-                # Update the active session for THIS platform to inactive
                 stmt = (
-                    update(StreamSession)
+                    select(StreamSession)
                     .where(
                         (StreamSession.is_active == True)
                         & (StreamSession.platform == Platform.TWITCH.value)
                     )
-                    .values(is_active=False)
+                    .options(selectinload(StreamSession.events))
                 )
+                result = await session.execute(stmt)
+                stream_session = result.scalar_one_or_none()
 
-                await session.execute(stmt)
+                if stream_session is None:
+                    log.warning(
+                        "handle_stream_end: no active %s session found in DB.",
+                        Platform.TWITCH.value,
+                    )
+                    return
+
+                stream_session.is_active = False
+                stream_session.end_time = datetime.now(timezone.utc)
                 log.info(
-                    f"Marked active {Platform.TWITCH.value} StreamSession as offline in database."
+                    "Marked active %s StreamSession (id=%d) as offline in database.",
+                    Platform.TWITCH.value,
+                    stream_session.id,
                 )
         except Exception as e:
             log.error("Failed to close StreamSession in DB", exc_info=e)
+            return
+
+        # Step 2: Find Discord channel
+        try:
+            async with get_session() as session:
+                stmt = select(GuildConfig).where(
+                    GuildConfig.stream_updates_channel_id.isnot(None)
+                )
+                result = await session.execute(stmt)
+                config = result.scalar_one_or_none()
+
+            if not config or not config.stream_updates_channel_id:
+                log.warning("No stream_updates_channel_id configured. Skipping stream summary.")
+                return
+
+            channel = self.bot.get_channel(config.stream_updates_channel_id)
+            if not channel:
+                log.warning(
+                    "Configured stream updates channel (%d) is invisible to the bot. Skipping summary.",
+                    config.stream_updates_channel_id,
+                )
+                return
+        except Exception as e:
+            log.error("Failed to fetch GuildConfig for stream summary", exc_info=e)
+            return
+
+        # Step 3: Post the summary
+        await self._post_stream_summary(stream_session, channel)
+
+    async def _post_stream_summary(self, stream_session: StreamSession, channel):
+        # Duration
+        duration_str = "Unknown"
+        if stream_session.start_time and stream_session.end_time:
+            delta = stream_session.end_time - stream_session.start_time
+            total_seconds = int(delta.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            duration_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+
+        title = stream_session.title or StreamDefaults.TITLE.value
+        category = stream_session.category or StreamDefaults.CATEGORY.value
+
+        embed = discord.Embed(
+            title="Stream Recap",
+            description=f"**{title}**\nPlaying: {category}",
+            color=BrandColors.TWITCH,
+        )
+        embed.add_field(name="Duration", value=duration_str, inline=True)
+        if stream_session.peak_viewers is not None:
+            embed.add_field(name="Peak Viewers", value=str(stream_session.peak_viewers), inline=True)
+
+        lc_events = [e for e in stream_session.events if e.event_type == "leetcode"]
+        project_events = [e for e in stream_session.events if e.event_type == "project"]
+
+        if lc_events:
+            lines = []
+            for e in lc_events:
+                text = f"[{e.title}]({e.url})" if e.url else e.title
+                if e.rating is not None:
+                    text += f" · {e.rating}"
+                if e.vod_timestamp:
+                    text += f" · `{e.vod_timestamp}`"
+                lines.append(f"- {text}")
+            embed.add_field(
+                name=f"LeetCode ({len(lc_events)} solved)",
+                value="\n".join(lines),
+                inline=False,
+            )
+
+        if project_events:
+            lines = []
+            for e in project_events:
+                lines.append(f"- [{e.title}]({e.url})" if e.url else f"- {e.title}")
+            embed.add_field(name="GitHub Projects", value="\n".join(lines), inline=False)
+
+        try:
+            await channel.send(embed=embed)
+            log.info("Sent stream recap embed to #%s.", channel.name)
+        except Exception as e:
+            log.error("Failed to send stream recap embed", exc_info=e)
 
 
 def setup(bot):
