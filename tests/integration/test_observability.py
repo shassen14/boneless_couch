@@ -11,6 +11,7 @@ Usage:
 import logging
 import sentry_sdk
 from couchd.core.config import settings
+from couchd.core.constants import BotConfig
 from couchd.core.logger import setup_logging
 
 setup_logging(webhook_url=settings.BOT_LOGS_WEBHOOK_URL, bot_name="test")
@@ -40,7 +41,7 @@ else:
         data=data,
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "BonelessCouchBot/1.0",
+            "User-Agent": BotConfig.USER_AGENT,
         },
         method="POST",
     )

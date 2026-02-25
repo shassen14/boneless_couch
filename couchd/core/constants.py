@@ -73,6 +73,10 @@ class CommandCooldowns:
     PROJECT = Cooldown(user_seconds=15, global_seconds=5)
 
 
+class BotConfig:
+    USER_AGENT = "BonelessCouchBot/1.0"
+
+
 class BrandColors:
     # Use discord.Color objects for easy integration with Embeds
     PRIMARY = discord.Color.brand_green()

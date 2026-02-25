@@ -7,6 +7,8 @@ import threading
 import traceback
 import urllib.request
 
+from couchd.core.constants import BotConfig
+
 
 class DiscordWebhookHandler(logging.Handler):
     """
@@ -52,7 +54,7 @@ class DiscordWebhookHandler(logging.Handler):
                 data=data,
                 headers={
                     "Content-Type": "application/json",
-                    "User-Agent": "BonelessCouchBot/1.0",
+                    "User-Agent": BotConfig.USER_AGENT,
                 },
                 method="POST",
             )
