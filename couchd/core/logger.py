@@ -56,7 +56,7 @@ class DiscordWebhookHandler(logging.Handler):
             with urllib.request.urlopen(req, timeout=5):
                 pass
         except Exception:
-            pass  # Never let the log handler crash the app
+            self.handleError(record)  # prints to stderr; visible in docker compose logs
 
 
 def setup_logging(
