@@ -50,7 +50,10 @@ class DiscordWebhookHandler(logging.Handler):
             req = urllib.request.Request(
                 self.webhook_url,
                 data=data,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "BonelessCouchBot/1.0",
+                },
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=5):

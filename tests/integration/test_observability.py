@@ -38,7 +38,10 @@ else:
     req = urllib.request.Request(
         settings.BOT_LOGS_WEBHOOK_URL,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "BonelessCouchBot/1.0",
+        },
         method="POST",
     )
     try:
