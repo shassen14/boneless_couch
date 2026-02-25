@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "boneless-couch"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    # social media: discord, twitch
+    "py-cord",
+    "twitchio[starlette]",
+    # configuration
+    "python-dotenv",
+    "pydantic",
+    "pydantic-settings",
+    # database
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "alembic",
+    # observability
+    "sentry-sdk",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["couchd"]
