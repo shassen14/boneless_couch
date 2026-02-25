@@ -1,13 +1,14 @@
 services:
   discord:
     build: .
+    image: boneless-couch
     volumes:
       - ./.env:/app/.env:ro
     command: python -m couchd.platforms.discord.main
     restart: unless-stopped
 
   twitch:
-    build: .
+    image: boneless-couch
     volumes:
       - ./.env:/app/.env:ro
     command: python -m couchd.platforms.twitch.main
