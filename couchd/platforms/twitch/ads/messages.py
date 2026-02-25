@@ -1,4 +1,4 @@
-# couchd/platforms/twitch/ad_messages.py
+# couchd/platforms/twitch/ads/messages.py
 import random
 
 # Probability of sending any message after an ad (avoids spamming every break).

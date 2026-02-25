@@ -1,4 +1,4 @@
-# couchd/platforms/twitch/commands.py
+# couchd/platforms/twitch/components/commands.py
 import logging
 import twitchio
 from twitchio.ext import commands
@@ -9,13 +9,13 @@ from couchd.core.db import get_session
 from couchd.core.models import StreamEvent
 from couchd.core.api_clients import YouTubeRSSClient
 from couchd.core.constants import CommandCooldowns
-from couchd.platforms.twitch.leetcode_client import LeetCodeClient
-from couchd.platforms.twitch.ad_manager import AdBudgetManager
-from couchd.platforms.twitch.metrics_tracker import ChatVelocityTracker
-from couchd.platforms.twitch.github_client import GitHubClient
-from couchd.platforms.twitch.cooldowns import CooldownManager
-from couchd.platforms.twitch.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
-from couchd.platforms.twitch.ad_messages import pick_ad_message
+from couchd.core.leetcode_client import LeetCodeClient
+from couchd.core.github_client import GitHubClient
+from couchd.platforms.twitch.ads.manager import AdBudgetManager
+from couchd.platforms.twitch.ads.messages import pick_ad_message
+from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
+from couchd.platforms.twitch.components.cooldowns import CooldownManager
+from couchd.platforms.twitch.components.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
 
 log = logging.getLogger(__name__)
 

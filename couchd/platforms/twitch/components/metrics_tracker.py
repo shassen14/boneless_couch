@@ -1,4 +1,4 @@
-# couchd/platforms/twitch/metrics_tracker.py
+# couchd/platforms/twitch/components/metrics_tracker.py
 import logging
 from collections import deque
 from datetime import datetime, timezone, timedelta

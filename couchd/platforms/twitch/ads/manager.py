@@ -1,4 +1,4 @@
-# couchd/platforms/twitch/ad_manager.py
+# couchd/platforms/twitch/ads/manager.py
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta

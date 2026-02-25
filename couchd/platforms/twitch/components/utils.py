@@ -1,4 +1,4 @@
-# couchd/platforms/twitch/utils.py
+# couchd/platforms/twitch/components/utils.py
 import logging
 from datetime import datetime, timezone
 

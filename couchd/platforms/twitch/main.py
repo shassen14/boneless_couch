@@ -13,13 +13,13 @@ from couchd.core.db import get_session
 from couchd.core.models import StreamSession
 from couchd.core.constants import ChatMetrics
 from couchd.core.api_clients import TwitchClient, YouTubeRSSClient
-from couchd.platforms.twitch.leetcode_client import LeetCodeClient
-from couchd.platforms.twitch.ad_manager import AdBudgetManager
-from couchd.platforms.twitch.metrics_tracker import ChatVelocityTracker
-from couchd.platforms.twitch.github_client import GitHubClient
-from couchd.platforms.twitch.commands import BotCommands
-from couchd.platforms.twitch.ad_scheduler import AdScheduler
-from couchd.platforms.twitch.utils import get_active_session
+from couchd.core.leetcode_client import LeetCodeClient
+from couchd.core.github_client import GitHubClient
+from couchd.platforms.twitch.ads.manager import AdBudgetManager
+from couchd.platforms.twitch.ads.scheduler import AdScheduler
+from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
+from couchd.platforms.twitch.components.commands import BotCommands
+from couchd.platforms.twitch.components.utils import get_active_session
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(dsn=settings.SENTRY_DSN)

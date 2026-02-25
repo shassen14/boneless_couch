@@ -1,4 +1,4 @@
-# couchd/platforms/twitch/ad_scheduler.py
+# couchd/platforms/twitch/ads/scheduler.py
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -7,9 +7,9 @@ from couchd.core.config import settings
 from couchd.core.models import StreamSession
 from couchd.core.constants import AdConfig
 from couchd.core.api_clients import YouTubeRSSClient
-from couchd.platforms.twitch.ad_manager import AdBudgetManager
-from couchd.platforms.twitch.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
-from couchd.platforms.twitch.ad_messages import pick_ad_message
+from couchd.platforms.twitch.ads.manager import AdBudgetManager
+from couchd.platforms.twitch.components.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
+from couchd.platforms.twitch.ads.messages import pick_ad_message
 
 log = logging.getLogger(__name__)
 

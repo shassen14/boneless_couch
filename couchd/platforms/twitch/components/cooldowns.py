@@ -1,4 +1,4 @@
-# couchd/platforms/twitch/cooldowns.py
+# couchd/platforms/twitch/components/cooldowns.py
 import time
 import logging
 from couchd.core.constants import Cooldown

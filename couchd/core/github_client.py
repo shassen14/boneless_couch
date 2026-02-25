@@ -1,4 +1,4 @@
-# couchd/platforms/twitch/github_client.py
+# couchd/core/github_client.py
 import logging
 import aiohttp
 

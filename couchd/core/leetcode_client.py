@@ -1,4 +1,4 @@
-# couchd/platforms/twitch/leetcode_client.py
+# couchd/core/leetcode_client.py
 import logging
 import aiohttp
 
