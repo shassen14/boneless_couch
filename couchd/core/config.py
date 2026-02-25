@@ -1,6 +1,7 @@
 # couchd/core/config.py
 
 import pathlib
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Project root is 3 levels up from this file (couchd/core/config.py).
@@ -66,6 +67,15 @@ class Settings(BaseSettings):
     SOCIAL_TWITCH: list[str] = []
     SOCIAL_YOUTUBE: list[str] = []
     SOCIAL_GITHUB: list[str] = []
+
+    @field_validator("SOCIAL_TWITCH", "SOCIAL_YOUTUBE", "SOCIAL_GITHUB", mode="before")
+    @classmethod
+    def parse_comma_separated(cls, v: object) -> list[str]:
+        if not v:
+            return []
+        if isinstance(v, list):
+            return v
+        return [item.strip() for item in str(v).split(",") if item.strip()]
 
     # Observability (optional)
     SENTRY_DSN: str | None = None
