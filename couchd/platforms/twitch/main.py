@@ -6,6 +6,7 @@ from twitchio import eventsub
 from twitchio.ext import commands
 from sqlalchemy import select
 
+import sentry_sdk
 from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
@@ -20,7 +21,10 @@ from couchd.platforms.twitch.commands import BotCommands
 from couchd.platforms.twitch.ad_scheduler import AdScheduler
 from couchd.platforms.twitch.utils import get_active_session
 
-setup_logging()
+if settings.SENTRY_DSN:
+    sentry_sdk.init(dsn=settings.SENTRY_DSN)
+
+setup_logging(webhook_url=settings.BOT_LOGS_WEBHOOK_URL, bot_name="twitch")
 log = logging.getLogger(__name__)
 
 

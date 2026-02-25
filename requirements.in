@@ -10,5 +10,8 @@ pydantic-settings
 
 # database
 sqlalchemy[asyncio]
-asyncpg 
+asyncpg
 alembic
+
+# observability
+sentry-sdk

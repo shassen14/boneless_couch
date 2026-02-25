@@ -3,13 +3,16 @@
 import discord
 import os
 import logging
+import sentry_sdk
 from discord.ext import commands
 from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import engine, Base
 
-# Initialize our central logging system right at the start
-setup_logging()
+if settings.SENTRY_DSN:
+    sentry_sdk.init(dsn=settings.SENTRY_DSN)
+
+setup_logging(webhook_url=settings.BOT_LOGS_WEBHOOK_URL, bot_name="discord")
 
 # Now we can grab a logger for this specific file
 log = logging.getLogger(__name__)
