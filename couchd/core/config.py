@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     YOUTUBE_CHANNEL_ID: str | None = None
     YOUTUBE_POLL_RATE_MINUTES: float = 15.0
 
+    # Social links (comma-separated; empty list disables /socials field)
+    SOCIAL_TWITCH: list[str] = []
+    SOCIAL_YOUTUBE: list[str] = []
+    SOCIAL_GITHUB: list[str] = []
+
     # Observability (optional)
     SENTRY_DSN: str | None = None
     BOT_LOGS_WEBHOOK_URL: str | None = None

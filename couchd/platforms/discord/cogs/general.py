@@ -47,25 +47,7 @@ class GeneralCog(commands.Cog):
             f"Pong! Latency is {self.bot.latency*1000:.2f}ms", ephemeral=True
         )
 
-    # 3. THE MEMBERCOUNT COMMAND
-    @commands.slash_command(
-        name="membercount",
-        description=" (Admins only) Check if the bot can see server members.",
-        default_member_permissions=discord.Permissions(administrator=True),
-    )
-    async def member_count(self, ctx: discord.ApplicationContext):
-        guild = ctx.guild
-        if guild:
-            member_count = guild.member_count
-            await ctx.respond(
-                f"I can see {member_count} members in this server. ✅", ephemeral=True
-            )
-        else:
-            await ctx.respond(
-                "This command can only be used in a server.", ephemeral=True
-            )
-
-    # 4. THE DBTEST COMMAND
+    # 3. THE DBTEST COMMAND
     @commands.slash_command(
         name="dbtest",
         description="(Admins only) Test Database connection.",
