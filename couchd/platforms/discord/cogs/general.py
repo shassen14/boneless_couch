@@ -19,7 +19,7 @@ class GeneralCog(commands.Cog):
     # 1. THE SYNC COMMAND (Now Admin-only instead of hardcoded owner)
     @commands.slash_command(
         name="sync",
-        description="Sync commands globally (Admins only)",
+        description="(Admins only) Sync commands globally",
         default_member_permissions=discord.Permissions(administrator=True),
     )
     async def sync(self, ctx: discord.ApplicationContext):
@@ -39,7 +39,7 @@ class GeneralCog(commands.Cog):
     # 2. THE PING COMMAND
     @commands.slash_command(
         name="ping",
-        description="Check if the bot is responsive. (Admins only)",
+        description="(Admins only) Check if the bot is responsive.",
         default_member_permissions=discord.Permissions(administrator=True),
     )
     async def ping(self, ctx: discord.ApplicationContext):
@@ -50,7 +50,7 @@ class GeneralCog(commands.Cog):
     # 3. THE MEMBERCOUNT COMMAND
     @commands.slash_command(
         name="membercount",
-        description="Check if the bot can see server members. (Admins only)",
+        description=" (Admins only) Check if the bot can see server members.",
         default_member_permissions=discord.Permissions(administrator=True),
     )
     async def member_count(self, ctx: discord.ApplicationContext):
@@ -68,7 +68,7 @@ class GeneralCog(commands.Cog):
     # 4. THE DBTEST COMMAND
     @commands.slash_command(
         name="dbtest",
-        description="Test Database connection. (Admins only)",
+        description="(Admins only) Test Database connection.",
         default_member_permissions=discord.Permissions(administrator=True),
     )
     async def dbtest(self, ctx: discord.ApplicationContext):
