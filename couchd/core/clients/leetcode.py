@@ -1,4 +1,4 @@
-# couchd/core/leetcode_client.py
+# couchd/core/clients/leetcode.py
 import logging
 import aiohttp
 

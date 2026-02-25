@@ -4,7 +4,7 @@ from discord.ext import commands, tasks
 import logging
 
 from couchd.core.config import settings
-from couchd.core.api_clients import YouTubeRSSClient
+from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.db import get_session
 from couchd.core.models import GuildConfig
 from couchd.core.constants import BrandColors

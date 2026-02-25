@@ -1,4 +1,4 @@
-# couchd/core/github_client.py
+# couchd/core/clients/github.py
 import logging
 import aiohttp
 

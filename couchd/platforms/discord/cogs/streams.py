@@ -6,7 +6,7 @@ import random
 from datetime import datetime, timezone
 
 from couchd.core.config import settings
-from couchd.core.api_clients import TwitchClient
+from couchd.core.clients.twitch import TwitchClient
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, GuildConfig
 from couchd.core.constants import Platform, StreamDefaults, TwitchConfig, BrandColors

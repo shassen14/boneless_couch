@@ -7,10 +7,10 @@ from sqlalchemy import select
 from couchd.core.config import settings
 from couchd.core.db import get_session
 from couchd.core.models import StreamEvent
-from couchd.core.api_clients import YouTubeRSSClient
+from couchd.core.clients.youtube import YouTubeRSSClient
+from couchd.core.clients.leetcode import LeetCodeClient
+from couchd.core.clients.github import GitHubClient
 from couchd.core.constants import CommandCooldowns
-from couchd.core.leetcode_client import LeetCodeClient
-from couchd.core.github_client import GitHubClient
 from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.messages import pick_ad_message
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
