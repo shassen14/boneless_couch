@@ -23,10 +23,13 @@ class CommunityCog(commands.Cog):
     async def socials(self, ctx: discord.ApplicationContext):
         embed = discord.Embed(title="Socials", color=BrandColors.PRIMARY)
 
+        def _links(val: str) -> list[str]:
+            return [s.strip() for s in val.split(",") if s.strip()]
+
         platforms = [
-            ("Twitch", settings.SOCIAL_TWITCH),
-            ("YouTube", settings.SOCIAL_YOUTUBE),
-            ("GitHub", settings.SOCIAL_GITHUB),
+            ("Twitch", _links(settings.SOCIAL_TWITCH)),
+            ("YouTube", _links(settings.SOCIAL_YOUTUBE)),
+            ("GitHub", _links(settings.SOCIAL_GITHUB)),
         ]
         any_configured = False
         for name, links in platforms:
