@@ -4,6 +4,7 @@ import logging
 import twitchio
 from twitchio import eventsub
 from twitchio.ext import commands
+from twitchio.ext.commands.exceptions import CommandNotFound
 from sqlalchemy import select
 
 import sentry_sdk
@@ -101,6 +102,11 @@ class TwitchBot(commands.Bot):
             log.info("Subscribed to chat messages after OAuth.")
         except Exception as e:
             log.error("Failed to subscribe to chat after OAuth", exc_info=e)
+
+    async def event_command_error(self, payload: commands.CommandErrorPayload) -> None:
+        if isinstance(payload.exception, CommandNotFound):
+            return
+        log.error("Command error: %s", payload.exception, exc_info=payload.exception)
 
     async def _run_metrics_loop(self) -> None:
         """Periodically update peak viewer count and log high-velocity chat."""
