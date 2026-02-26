@@ -77,7 +77,7 @@ class AdScheduler:
             await asyncio.sleep(AdConfig.WARNING_SECONDS)
 
             clamped = clamp_to_ad_duration(duration_seconds)
-            users = await self._bot.fetch_users(names=[settings.TWITCH_CHANNEL])
+            users = await self._bot.fetch_users(logins=[settings.TWITCH_CHANNEL])
             if not users:
                 log.warning("_warn_then_ad: could not fetch channel user to start commercial.")
                 return

@@ -41,7 +41,7 @@ async def get_active_session() -> StreamSession | None:
 async def send_chat_message(bot, message: str) -> None:
     """Send a standalone message to the streamer's channel."""
     try:
-        users = await bot.fetch_users(names=[settings.TWITCH_CHANNEL])
+        users = await bot.fetch_users(logins=[settings.TWITCH_CHANNEL])
         if not users:
             log.warning("send_chat_message: could not fetch channel user.")
             return
