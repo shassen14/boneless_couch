@@ -215,7 +215,7 @@ class ProblemsWatcherCog(commands.Cog):
                 name=thread_name,
                 embed=embed,
                 applied_tags=tags,
-                auto_archive_duration=discord.ThreadArchiveDuration.week,
+                auto_archive_duration=discord.ThreadArchiveDuration.one_week,
             )
             async with get_session() as db:
                 db.add(ProblemPost(platform_id=slug, forum_thread_id=thread.id))
