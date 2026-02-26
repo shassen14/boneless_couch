@@ -30,3 +30,17 @@ def pick_ad_message(latest_video: dict | None = None) -> str | None:
         )
 
     return random.choice(pool)
+
+
+_RETURN_POOL = [
+    "We're back! Welcome back everyone 👋",
+    "Ad break over — thanks for sticking around! 🙌",
+    "And we're live again! Thanks for the patience 💪",
+    "Back to it! Thanks for hanging tight ✌️",
+    "Ads done — let's get back to it! 🚀",
+]
+
+
+def pick_return_message() -> str:
+    """Returns a message to post when the ad break ends."""
+    return random.choice(_RETURN_POOL)

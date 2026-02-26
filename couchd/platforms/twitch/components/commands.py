@@ -1,6 +1,8 @@
 # couchd/platforms/twitch/components/commands.py
+import asyncio
 import logging
 import re
+from datetime import datetime, timezone, timedelta
 import twitchio
 from twitchio.ext import commands
 from sqlalchemy import select
@@ -13,7 +15,7 @@ from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
 from couchd.core.constants import CommandCooldowns
 from couchd.platforms.twitch.ads.manager import AdBudgetManager
-from couchd.platforms.twitch.ads.messages import pick_ad_message
+from couchd.platforms.twitch.ads.messages import pick_ad_message, pick_return_message
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
 from couchd.platforms.twitch.components.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
@@ -354,15 +356,19 @@ class BotCommands(commands.Component):
             return
 
         args = ctx.content.split()
+        remaining = await self.ad_manager.get_remaining(active_session.id)
         if len(args) > 1:
             try:
                 minutes = float(args[1])
             except ValueError:
                 await ctx.reply("Usage: !ad [minutes] — e.g. !ad 1.5 for 90s")
                 return
-            duration_seconds = clamp_to_ad_duration(round(minutes * 60))
+            requested = round(minutes * 60)
+            if remaining == 0:
+                await ctx.reply("Ad quota already met this hour.")
+                return
+            duration_seconds = clamp_to_ad_duration(min(requested, remaining))
         else:
-            remaining = await self.ad_manager.get_remaining(active_session.id)
             if remaining == 0:
                 await ctx.reply("Ad quota already met this hour.")
                 return
@@ -379,12 +385,21 @@ class BotCommands(commands.Component):
         await self.ad_manager.log_ad(active_session.id, duration_seconds, vod_ts)
         self.ad_manager.cancel_pending()
 
+        ends_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds)
+        end_time = ends_at.strftime("%-I:%M:%S %p UTC")
+
         whole_minutes, leftover_seconds = divmod(duration_seconds, 60)
         duration_label = f"{whole_minutes}m {leftover_seconds}s" if leftover_seconds else f"{whole_minutes}m"
-        await ctx.reply(f"🎬 Running {duration_label} ad. Time to stretch!")
+        await ctx.reply(f"🎬 Running {duration_label} ad — ends ~{end_time}. Time to stretch!")
         log.info("Triggered %ds ad break.", duration_seconds)
 
         latest_video = await self.youtube_client.get_latest_video() if self.youtube_client else None
         ad_msg = pick_ad_message(latest_video)
         if ad_msg:
             await send_chat_message(self.bot, ad_msg)
+
+        async def _notify_return() -> None:
+            await asyncio.sleep(duration_seconds)
+            await send_chat_message(self.bot, pick_return_message())
+
+        asyncio.create_task(_notify_return())
