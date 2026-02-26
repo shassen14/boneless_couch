@@ -81,6 +81,9 @@ class TwitchClient:
 
             return None  # List is empty, user is offline
 
+        except aiohttp.ClientError as e:
+            log.error("Network error checking Twitch stream status", exc_info=e)
+            raise
         except Exception as e:
             log.error("Exception while checking Twitch stream status", exc_info=e)
             return None
