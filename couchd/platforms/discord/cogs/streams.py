@@ -62,8 +62,21 @@ class StreamWatcherCog(commands.Cog):
         # 1. Save to Database
         try:
             async with get_session() as session:
+                existing_stmt = (
+                    select(StreamSession)
+                    .where(
+                        (StreamSession.is_active == True)
+                        & (StreamSession.platform == Platform.TWITCH.value)
+                    )
+                    .order_by(StreamSession.start_time.desc())
+                )
+                existing_result = await session.execute(existing_stmt)
+                if existing_result.scalars().first() is not None:
+                    log.info("Active StreamSession already exists; skipping creation (bot restart mid-stream).")
+                    return
+
                 new_stream = StreamSession(
-                    platform=Platform.TWITCH.value,  # Uses Enum
+                    platform=Platform.TWITCH.value,
                     title=title,
                     category=category,
                     is_active=True,
@@ -125,10 +138,11 @@ class StreamWatcherCog(commands.Cog):
                         (StreamSession.is_active == True)
                         & (StreamSession.platform == Platform.TWITCH.value)
                     )
+                    .order_by(StreamSession.start_time.desc())
                     .options(selectinload(StreamSession.events))
                 )
                 result = await session.execute(stmt)
-                stream_session = result.scalar_one_or_none()
+                stream_session = result.scalars().first()
 
                 if stream_session is None:
                     log.warning(

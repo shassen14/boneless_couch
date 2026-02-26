@@ -26,12 +26,16 @@ def compute_vod_timestamp(start_time: datetime) -> str:
 async def get_active_session() -> StreamSession | None:
     """Return the currently active Twitch StreamSession, or None."""
     async with get_session() as db:
-        stmt = select(StreamSession).where(
-            (StreamSession.is_active == True)
-            & (StreamSession.platform == Platform.TWITCH.value)
+        stmt = (
+            select(StreamSession)
+            .where(
+                (StreamSession.is_active == True)
+                & (StreamSession.platform == Platform.TWITCH.value)
+            )
+            .order_by(StreamSession.start_time.desc())
         )
         result = await db.execute(stmt)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
 
 async def send_chat_message(bot, message: str) -> None:
