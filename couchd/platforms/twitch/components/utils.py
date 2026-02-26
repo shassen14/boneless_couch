@@ -45,7 +45,7 @@ async def send_chat_message(bot, message: str) -> None:
         if not users:
             log.warning("send_chat_message: could not fetch channel user.")
             return
-        await users[0].send_message(sender_id=settings.TWITCH_BOT_ID, message=message)
+        await users[0].send_message(sender=settings.TWITCH_BOT_ID, message=message)
     except Exception:
         log.error("Failed to send chat message", exc_info=True)
 
