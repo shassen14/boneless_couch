@@ -40,6 +40,7 @@ class AdConfig:
 
 class LeetCodeConfig:
     GRAPHQL_URL = "https://leetcode.com/graphql"
+    SUBMISSION_URL = "https://leetcode.com/submissions/detail/{}/"
 
 
 class ZerotracConfig:
@@ -75,6 +76,14 @@ class CommandCooldowns:
 
 class BotConfig:
     USER_AGENT = "BonelessCouchBot/1.0"
+
+
+class ProblemsConfig:
+    POLL_RATE_MINUTES: float = 1.0
+    TAG_EASY = "Easy"
+    TAG_MEDIUM = "Medium"
+    TAG_HARD = "Hard"
+    TITLE_MAX_LEN: int = 100
 
 
 class BrandColors:

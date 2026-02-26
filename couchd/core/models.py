@@ -15,6 +15,7 @@ class GuildConfig(Base):
     stream_updates_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     video_updates_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     video_updates_role_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    problems_forum_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
 
 
 class StreamSession(Base):
@@ -64,3 +65,11 @@ class StreamEvent(Base):
     session: Mapped["StreamSession"] = relationship(
         "StreamSession", back_populates="events"
     )
+
+
+class ProblemPost(Base):
+    __tablename__ = "problem_posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    platform_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    forum_thread_id: Mapped[int] = mapped_column(BigInteger, nullable=False)

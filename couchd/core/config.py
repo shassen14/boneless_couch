@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     YOUTUBE_CHANNEL_ID: str | None = None
     YOUTUBE_POLL_RATE_MINUTES: float = 15.0
 
+    # LeetCode (optional — omit to disable streamer auto-submission detection)
+    LEETCODE_USERNAME: str | None = None
+
     # Social links (comma-separated string; empty string disables /socials field)
     SOCIAL_TWITCH: str = ""
     SOCIAL_YOUTUBE: str = ""

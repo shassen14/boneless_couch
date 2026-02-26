@@ -109,6 +109,21 @@ class SetupCog(commands.Cog):
         )
 
     @setup_group.command(
+        name="problems_forum",
+        description="Set the LeetCode problems archive forum.",
+    )
+    async def set_problems_forum(
+        self,
+        ctx: discord.ApplicationContext,
+        channel: discord.Option(
+            discord.ForumChannel,
+            "Forum channel for LeetCode archives",
+            channel_types=[discord.ChannelType.forum],
+        ),
+    ):
+        await self._update_channel_config(ctx, channel, "problems_forum_id", "Problems Forum")
+
+    @setup_group.command(
         name="video_updates_role",
         description="Set the role to ping when a new video is posted.",
     )

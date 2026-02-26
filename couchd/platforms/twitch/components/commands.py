@@ -1,5 +1,6 @@
 # couchd/platforms/twitch/components/commands.py
 import logging
+import re
 import twitchio
 from twitchio.ext import commands
 from sqlalchemy import select
@@ -18,6 +19,10 @@ from couchd.platforms.twitch.components.cooldowns import CooldownManager
 from couchd.platforms.twitch.components.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
 
 log = logging.getLogger(__name__)
+
+_LC_SUBMISSION_SLUG = re.compile(r'leetcode\.com/problems/([\w-]+)/submissions/\d+')
+_LC_SUBMISSION_BARE = re.compile(r'leetcode\.com/submissions/detail/\d+')
+_URL_RE = re.compile(r'https?://\S+')
 
 
 class BotCommands(commands.Component):
@@ -46,6 +51,64 @@ class BotCommands(commands.Component):
             return
         log.info(f"[CHAT] {payload.chatter.name}: {payload.text}")
         self.metrics_tracker.record_message()
+        await self._check_solution_url(payload)
+
+    async def _check_solution_url(self, payload: twitchio.ChatMessage) -> None:
+        slug_match = _LC_SUBMISSION_SLUG.search(payload.text)
+        if slug_match:
+            slug = slug_match.group(1)
+        elif _LC_SUBMISSION_BARE.search(payload.text):
+            slug = None
+        else:
+            return
+
+        url_match = _URL_RE.search(payload.text)
+        if not url_match:
+            return
+        url = url_match.group(0)
+
+        active_session = await get_active_session()
+        if not active_session:
+            return
+
+        async with get_session() as db:
+            lc_stmt = (
+                select(StreamEvent)
+                .where(
+                    StreamEvent.session_id == active_session.id,
+                    StreamEvent.event_type == "leetcode",
+                )
+                .order_by(StreamEvent.timestamp.desc())
+                .limit(1)
+            )
+            lc_result = await db.execute(lc_stmt)
+            lc_event = lc_result.scalar_one_or_none()
+
+            if not lc_event:
+                return
+            if slug and slug != lc_event.platform_id:
+                return
+
+            dup_stmt = select(StreamEvent).where(
+                StreamEvent.url == url,
+                StreamEvent.event_type == "solution",
+            )
+            dup_result = await db.execute(dup_stmt)
+            if dup_result.scalar_one_or_none():
+                return
+
+            vod_ts = compute_vod_timestamp(active_session.start_time)
+            db.add(StreamEvent(
+                session_id=active_session.id,
+                event_type="solution",
+                title=payload.chatter.name,
+                url=url,
+                platform_id=lc_event.platform_id,
+                vod_timestamp=vod_ts,
+            ))
+            await db.commit()
+
+        log.info("Logged solution from %s for %s", payload.chatter.name, lc_event.platform_id)
 
     # ------------------------------------------------------------------
     # !commands

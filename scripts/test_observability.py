@@ -1,4 +1,5 @@
 """
+Moved away because doesn't use pytest
 tests/integration/test_observability.py
 
 Fires a test ERROR log and a test Sentry event to verify both observability
@@ -29,11 +30,13 @@ else:
     import urllib.request
 
     payload = {
-        "embeds": [{
-            "title": "[test] Observability check",
-            "description": "**Webhook is working** — sent from `tests/integration/test_observability.py`",
-            "color": 0xFF4500,
-        }]
+        "embeds": [
+            {
+                "title": "[test] Observability check",
+                "description": "**Webhook is working** — sent from `tests/integration/test_observability.py`",
+                "color": 0xFF4500,
+            }
+        ]
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(

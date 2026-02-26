@@ -19,6 +19,16 @@ query questionData($titleSlug: String!) {
 }
 """
 
+_LC_RECENT_AC_QUERY = """
+query recentAcSubmissions($username: String!, $limit: Int!) {
+  recentAcSubmissionList(username: $username, limit: $limit) {
+    id
+    titleSlug
+    timestamp
+  }
+}
+"""
+
 
 class LeetCodeClient:
     """Fetches LeetCode problem metadata and zerotrac difficulty ratings."""
@@ -110,3 +120,28 @@ class LeetCodeClient:
     def get_rating(self, problem_id: int) -> float | None:
         """Return the zerotrac rating for a problem ID, or None if not in cache."""
         return self._ratings.get(problem_id)
+
+    async def fetch_recent_ac_submissions(self, username: str, limit: int = 10) -> list[dict]:
+        """
+        Return recent accepted submissions for a LeetCode user.
+        Each entry: {id: str, titleSlug: str, timestamp: str}
+        """
+        payload = {
+            "query": _LC_RECENT_AC_QUERY,
+            "variables": {"username": username, "limit": limit},
+        }
+        try:
+            async with aiohttp.ClientSession() as http:
+                async with http.post(
+                    LeetCodeConfig.GRAPHQL_URL,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    if resp.status != 200:
+                        log.warning("LeetCode GraphQL returned HTTP %s for recent AC.", resp.status)
+                        return []
+                    data = await resp.json()
+            return data.get("data", {}).get("recentAcSubmissionList", []) or []
+        except Exception:
+            log.warning("Exception fetching recent AC submissions for '%s'.", username, exc_info=True)
+            return []
