@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent
+from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog
 from couchd.core.constants import BrandColors
 from couchd.core.clients.youtube import YouTubeRSSClient
 
@@ -68,52 +68,40 @@ class CommunityCog(commands.Cog):
     async def project(self, ctx: discord.ApplicationContext):
         await ctx.defer()
         async with get_session() as session:
-            stmt = (
-                select(StreamEvent)
-                .where(StreamEvent.event_type == "project")
+            project = (await session.execute(
+                select(ProjectLog)
+                .join(StreamEvent)
                 .order_by(StreamEvent.timestamp.desc())
                 .limit(1)
-            )
-            result = await session.execute(stmt)
-            event = result.scalar_one_or_none()
+            )).scalar_one_or_none()
 
-        if event is None:
+        if project is None:
             await ctx.followup.send("No project has been logged yet.")
             return
 
-        embed = discord.Embed(
-            title=event.title,
-            url=event.url,
-            color=BrandColors.PRIMARY,
-        )
+        embed = discord.Embed(title=project.title, url=project.url, color=BrandColors.PRIMARY)
         await ctx.followup.send(embed=embed)
 
-    @commands.slash_command(name="lc", description="Most recent LeetCode solve from the last stream.")
+    @commands.slash_command(name="lc", description="Most recent LeetCode problem from the last stream.")
     async def lc(self, ctx: discord.ApplicationContext):
         await ctx.defer()
         async with get_session() as session:
-            stmt = (
-                select(StreamEvent)
-                .where(StreamEvent.event_type == "leetcode")
+            attempt = (await session.execute(
+                select(ProblemAttempt)
+                .join(StreamEvent)
                 .order_by(StreamEvent.timestamp.desc())
                 .limit(1)
-            )
-            result = await session.execute(stmt)
-            event = result.scalar_one_or_none()
+            )).scalar_one_or_none()
 
-        if event is None:
+        if attempt is None:
             await ctx.followup.send("No LeetCode problem has been logged yet.")
             return
 
-        embed = discord.Embed(
-            title=event.title,
-            url=event.url,
-            color=BrandColors.PRIMARY,
-        )
-        if event.rating is not None:
-            embed.add_field(name="Rating", value=str(event.rating), inline=True)
-        if event.vod_timestamp:
-            embed.add_field(name="VOD Timestamp", value=f"`{event.vod_timestamp}`", inline=True)
+        embed = discord.Embed(title=attempt.title, url=attempt.url, color=BrandColors.PRIMARY)
+        if attempt.rating is not None:
+            embed.add_field(name="Rating", value=str(attempt.rating), inline=True)
+        if attempt.vod_timestamp:
+            embed.add_field(name="VOD Timestamp", value=f"`{attempt.vod_timestamp}`", inline=True)
 
         await ctx.followup.send(embed=embed)
 

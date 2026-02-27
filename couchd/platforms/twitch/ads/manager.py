@@ -20,12 +20,12 @@ class AdBudgetManager:
         self._pending_task: asyncio.Task | None = None
 
     async def get_seconds_used(self, session_id: int) -> int:
-        """Sum ad durations (stored as seconds in platform_id) within the rolling window."""
+        """Sum ad durations (stored as seconds in notes) within the rolling window."""
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=AdConfig.WINDOW_SECONDS)
         async with get_session() as db:
             stmt = select(
                 func.coalesce(
-                    func.sum(cast(StreamEvent.platform_id, SAInteger)), 0
+                    func.sum(cast(StreamEvent.notes, SAInteger)), 0
                 )
             ).where(
                 StreamEvent.session_id == session_id,
@@ -53,17 +53,13 @@ class AdBudgetManager:
     async def log_ad(
         self, session_id: int, duration_seconds: int, vod_timestamp: str
     ) -> None:
-        """Write an ad event to the DB."""
-        minutes = duration_seconds // 60
+        """Write an ad event to the DB. Duration stored in notes for budget queries."""
         async with get_session() as db:
-            event = StreamEvent(
+            db.add(StreamEvent(
                 session_id=session_id,
                 event_type="ad",
-                title=f"{minutes}m ad",
-                platform_id=str(duration_seconds),
-                vod_timestamp=vod_timestamp,
-            )
-            db.add(event)
+                notes=str(duration_seconds),
+            ))
             await db.commit()
         log.info("Logged ad event: %ds at %s", duration_seconds, vod_timestamp)
 

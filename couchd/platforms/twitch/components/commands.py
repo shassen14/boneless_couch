@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent
+from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, SolutionPost
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
@@ -74,43 +74,42 @@ class BotCommands(commands.Component):
             return
 
         async with get_session() as db:
-            lc_stmt = (
-                select(StreamEvent)
-                .where(
-                    StreamEvent.session_id == active_session.id,
-                    StreamEvent.event_type == "leetcode",
-                )
+            attempt_stmt = (
+                select(ProblemAttempt)
+                .join(StreamEvent)
+                .where(StreamEvent.session_id == active_session.id)
                 .order_by(StreamEvent.timestamp.desc())
                 .limit(1)
             )
-            lc_result = await db.execute(lc_stmt)
-            lc_event = lc_result.scalar_one_or_none()
+            attempt = (await db.execute(attempt_stmt)).scalar_one_or_none()
 
-            if not lc_event:
+            if not attempt:
                 return
-            if slug and slug != lc_event.platform_id:
-                return
-
-            dup_stmt = select(StreamEvent).where(
-                StreamEvent.url == url,
-                StreamEvent.event_type == "solution",
-            )
-            dup_result = await db.execute(dup_stmt)
-            if dup_result.scalar_one_or_none():
+            if slug and slug != attempt.slug:
                 return
 
+            username = payload.chatter.name
             vod_ts = compute_vod_timestamp(active_session.start_time)
-            db.add(StreamEvent(
-                session_id=active_session.id,
-                event_type="solution",
-                title=payload.chatter.name,
-                url=url,
-                platform_id=lc_event.platform_id,
-                vod_timestamp=vod_ts,
-            ))
+            sol_stmt = select(SolutionPost).where(
+                SolutionPost.problem_slug == attempt.slug,
+                SolutionPost.platform == "twitch",
+                SolutionPost.username == username,
+            )
+            sol = (await db.execute(sol_stmt)).scalar_one_or_none()
+            if sol:
+                sol.url = url
+                sol.vod_timestamp = vod_ts
+            else:
+                db.add(SolutionPost(
+                    problem_slug=attempt.slug,
+                    platform="twitch",
+                    username=username,
+                    url=url,
+                    vod_timestamp=vod_ts,
+                ))
             await db.commit()
 
-        log.info("Logged solution from %s for %s", payload.chatter.name, lc_event.platform_id)
+        log.info("Logged solution from %s for %s", payload.chatter.name, attempt.slug)
 
     # ------------------------------------------------------------------
     # !commands
@@ -176,21 +175,18 @@ class BotCommands(commands.Component):
 
             async with get_session() as db:
                 stmt = (
-                    select(StreamEvent)
-                    .where(
-                        StreamEvent.session_id == active_session.id,
-                        StreamEvent.event_type == "leetcode",
-                    )
+                    select(ProblemAttempt)
+                    .join(StreamEvent)
+                    .where(StreamEvent.session_id == active_session.id)
                     .order_by(StreamEvent.timestamp.desc())
                     .limit(1)
                 )
-                result = await db.execute(stmt)
-                event = result.scalar_one_or_none()
+                attempt = (await db.execute(stmt)).scalar_one_or_none()
 
-            if not event:
+            if not attempt:
                 await ctx.reply("No LeetCode problem logged yet.")
             else:
-                await ctx.reply(event.url)
+                await ctx.reply(attempt.url)
             return
 
         # ---- !lc <url>: log new problem ----
@@ -227,17 +223,18 @@ class BotCommands(commands.Component):
 
         try:
             async with get_session() as db:
-                event = StreamEvent(
-                    session_id=active_session.id,
-                    event_type="leetcode",
+                event = StreamEvent(session_id=active_session.id, event_type="problem_attempt")
+                db.add(event)
+                await db.flush()
+                db.add(ProblemAttempt(
+                    stream_event_id=event.id,
+                    slug=slug,
                     title=title_str,
                     url=url,
-                    platform_id=slug,
-                    status=data["difficulty"],
+                    difficulty=data["difficulty"],
                     rating=rating_int,
                     vod_timestamp=vod_ts,
-                )
-                db.add(event)
+                ))
                 await db.commit()
 
             if rating_int is not None:
@@ -245,9 +242,9 @@ class BotCommands(commands.Component):
             else:
                 reply = f"✅ {title_str} | {data['difficulty']} @ {vod_ts}"
             await ctx.reply(reply)
-            log.info("Logged LeetCode event: %s", title_str)
+            log.info("Logged LeetCode problem: %s", title_str)
         except Exception:
-            log.error("DB error logging LC event", exc_info=True)
+            log.error("DB error logging LC problem", exc_info=True)
             await ctx.reply("❌ Failed to save to DB.")
 
     # ------------------------------------------------------------------
@@ -275,24 +272,21 @@ class BotCommands(commands.Component):
 
             async with get_session() as db:
                 stmt = (
-                    select(StreamEvent)
-                    .where(
-                        StreamEvent.session_id == active_session.id,
-                        StreamEvent.event_type == "project",
-                    )
+                    select(ProjectLog)
+                    .join(StreamEvent)
+                    .where(StreamEvent.session_id == active_session.id)
                     .order_by(StreamEvent.timestamp.desc())
                     .limit(1)
                 )
-                result = await db.execute(stmt)
-                event = result.scalar_one_or_none()
+                project = (await db.execute(stmt)).scalar_one_or_none()
 
-            if not event:
+            if not project:
                 await ctx.reply("No project logged yet.")
             else:
-                if event.status:
-                    await ctx.reply(f"Now working on: {event.title} — {event.status}")
+                if project.description:
+                    await ctx.reply(f"Now working on: {project.title} — {project.description}")
                 else:
-                    await ctx.reply(f"Now working on: {event.title}")
+                    await ctx.reply(f"Now working on: {project.title}")
             return
 
         # ---- !project <url>: set project ----
@@ -318,23 +312,24 @@ class BotCommands(commands.Component):
 
         try:
             async with get_session() as db:
-                event = StreamEvent(
-                    session_id=active_session.id,
-                    event_type="project",
-                    title=repo_name,
-                    url=url,
-                    status=description,
-                )
+                event = StreamEvent(session_id=active_session.id, event_type="project")
                 db.add(event)
+                await db.flush()
+                db.add(ProjectLog(
+                    stream_event_id=event.id,
+                    url=url,
+                    title=repo_name,
+                    description=description,
+                ))
                 await db.commit()
 
             if description:
                 await ctx.reply(f"Now working on: {repo_name} — {description}")
             else:
                 await ctx.reply(f"Now working on: {repo_name}")
-            log.info("Logged project event: %s", repo_name)
+            log.info("Logged project: %s", repo_name)
         except Exception:
-            log.error("DB error logging project event", exc_info=True)
+            log.error("DB error logging project", exc_info=True)
             await ctx.reply("❌ Failed to save to DB.")
 
     # ------------------------------------------------------------------

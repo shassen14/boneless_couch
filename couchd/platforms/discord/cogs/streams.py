@@ -8,10 +8,9 @@ from datetime import datetime, timezone
 from couchd.core.config import settings
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.db import get_session
-from couchd.core.models import StreamSession, GuildConfig
+from couchd.core.models import StreamSession, GuildConfig, ProblemAttempt, ProjectLog, StreamEvent
 from couchd.core.constants import Platform, StreamDefaults, TwitchConfig, BrandColors
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 log = logging.getLogger(__name__)
 
@@ -129,7 +128,7 @@ class StreamWatcherCog(commands.Cog):
     async def handle_stream_end(self):
         stream_session = None
 
-        # Step 1: Mark session inactive, set end_time, eager-load events
+        # Step 1: Mark session inactive, set end_time
         try:
             async with get_session() as session:
                 stmt = (
@@ -139,7 +138,6 @@ class StreamWatcherCog(commands.Cog):
                         & (StreamSession.platform == Platform.TWITCH.value)
                     )
                     .order_by(StreamSession.start_time.desc())
-                    .options(selectinload(StreamSession.events))
                 )
                 result = await session.execute(stmt)
                 stream_session = result.scalars().first()
@@ -211,28 +209,35 @@ class StreamWatcherCog(commands.Cog):
         if stream_session.peak_viewers is not None:
             embed.add_field(name="Peak Viewers", value=str(stream_session.peak_viewers), inline=True)
 
-        lc_events = [e for e in stream_session.events if e.event_type == "leetcode"]
-        project_events = [e for e in stream_session.events if e.event_type == "project"]
+        async with get_session() as db:
+            attempts = (await db.execute(
+                select(ProblemAttempt).join(StreamEvent)
+                .where(StreamEvent.session_id == stream_session.id)
+                .order_by(StreamEvent.timestamp)
+            )).scalars().all()
+            projects = (await db.execute(
+                select(ProjectLog).join(StreamEvent)
+                .where(StreamEvent.session_id == stream_session.id)
+                .order_by(StreamEvent.timestamp)
+            )).scalars().all()
 
-        if lc_events:
+        if attempts:
             lines = []
-            for e in lc_events:
-                text = f"[{e.title}]({e.url})" if e.url else e.title
-                if e.rating is not None:
-                    text += f" · {e.rating}"
-                if e.vod_timestamp:
-                    text += f" · `{e.vod_timestamp}`"
+            for a in attempts:
+                text = f"[{a.title}]({a.url})" if a.url else a.title
+                if a.rating is not None:
+                    text += f" · {a.rating}"
+                if a.vod_timestamp:
+                    text += f" · `{a.vod_timestamp}`"
                 lines.append(f"- {text}")
             embed.add_field(
-                name=f"LeetCode ({len(lc_events)} solved)",
+                name=f"LeetCode ({len(attempts)} attempted)",
                 value="\n".join(lines),
                 inline=False,
             )
 
-        if project_events:
-            lines = []
-            for e in project_events:
-                lines.append(f"- [{e.title}]({e.url})" if e.url else f"- {e.title}")
+        if projects:
+            lines = [f"- [{p.title}]({p.url})" if p.url else f"- {p.title}" for p in projects]
             embed.add_field(name="GitHub Projects", value="\n".join(lines), inline=False)
 
         try:

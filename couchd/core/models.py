@@ -1,7 +1,15 @@
 # couchd/core/models.py
 
 from datetime import datetime, timezone
-from sqlalchemy import BigInteger, String, Boolean, DateTime, ForeignKey, Integer
+from sqlalchemy import (
+    BigInteger,
+    String,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from couchd.core.db import Base
 
@@ -24,11 +32,9 @@ class StreamSession(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     platform: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=True)
-
     category: Mapped[str] = mapped_column(String, nullable=True)
     vod_url: Mapped[str] = mapped_column(String, nullable=True)
     peak_viewers: Mapped[int] = mapped_column(Integer, nullable=True)
-
     start_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -51,19 +57,58 @@ class StreamEvent(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     event_type: Mapped[str] = mapped_column(String, nullable=False)
-
-    title: Mapped[str] = mapped_column(String, nullable=False)
-    url: Mapped[str] = mapped_column(String, nullable=True)
-    rating: Mapped[int] = mapped_column(Integer, nullable=True)
-
-    platform_id: Mapped[str] = mapped_column(String, nullable=True)  # e.g., 'two-sum'
-    status: Mapped[str] = mapped_column(String, nullable=True)  # e.g., 'solved'
-    vod_timestamp: Mapped[str] = mapped_column(
-        String, nullable=True
-    )  # e.g., '01h25m30s'
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
     session: Mapped["StreamSession"] = relationship(
         "StreamSession", back_populates="events"
+    )
+    problem_attempt: Mapped["ProblemAttempt | None"] = relationship(
+        "ProblemAttempt",
+        back_populates="event",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    project_log: Mapped["ProjectLog | None"] = relationship(
+        "ProjectLog",
+        back_populates="event",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class ProblemAttempt(Base):
+    __tablename__ = "problem_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    stream_event_id: Mapped[int] = mapped_column(
+        ForeignKey("stream_events.id"), nullable=False, unique=True
+    )
+    slug: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(String, nullable=True)
+    difficulty: Mapped[str] = mapped_column(String, nullable=True)
+    rating: Mapped[int] = mapped_column(Integer, nullable=True)
+    vod_timestamp: Mapped[str] = mapped_column(String, nullable=True)
+
+    event: Mapped["StreamEvent"] = relationship(
+        "StreamEvent", back_populates="problem_attempt"
+    )
+
+
+class ProjectLog(Base):
+    __tablename__ = "project_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    stream_event_id: Mapped[int] = mapped_column(
+        ForeignKey("stream_events.id"), nullable=False, unique=True
+    )
+    url: Mapped[str] = mapped_column(String, nullable=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=True)
+    vod_timestamp: Mapped[str] = mapped_column(String, nullable=True)
+
+    event: Mapped["StreamEvent"] = relationship(
+        "StreamEvent", back_populates="project_log"
     )
 
 
@@ -73,3 +118,21 @@ class ProblemPost(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     platform_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     forum_thread_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class SolutionPost(Base):
+    __tablename__ = "solution_posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    problem_slug: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # matches ProblemPost.platform_id
+    platform: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # 'twitch', 'youtube', etc.
+    username: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    vod_timestamp: Mapped[str] = mapped_column(String, nullable=True)
+    discord_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+
+    __table_args__ = (UniqueConstraint("problem_slug", "platform", "username"),)
