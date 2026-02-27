@@ -132,12 +132,22 @@ class LeetCodeClient:
             "query": _LC_RECENT_AC_QUERY,
             "variables": {"username": username, "limit": limit},
         }
+        headers = {
+            "Content-Type": "application/json",
+            "Referer": "https://leetcode.com",
+            "Origin": "https://leetcode.com",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+        }
         try:
             async with aiohttp.ClientSession() as http:
                 async with http.post(
                     LeetCodeConfig.GRAPHQL_URL,
                     json=payload,
-                    headers={"Content-Type": "application/json"},
+                    headers=headers,
                 ) as resp:
                     if resp.status != 200:
                         log.warning(
