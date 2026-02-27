@@ -121,7 +121,9 @@ class LeetCodeClient:
         """Return the zerotrac rating for a problem ID, or None if not in cache."""
         return self._ratings.get(problem_id)
 
-    async def fetch_recent_ac_submissions(self, username: str, limit: int = 10) -> list[dict]:
+    async def fetch_recent_ac_submissions(
+        self, username: str, limit: int = 10
+    ) -> list[dict]:
         """
         Return recent accepted submissions for a LeetCode user.
         Each entry: {id: str, titleSlug: str, timestamp: str}
@@ -138,10 +140,17 @@ class LeetCodeClient:
                     headers={"Content-Type": "application/json"},
                 ) as resp:
                     if resp.status != 200:
-                        log.warning("LeetCode GraphQL returned HTTP %s for recent AC.", resp.status)
+                        log.warning(
+                            "LeetCode GraphQL returned HTTP %s for recent AC.",
+                            resp.status,
+                        )
                         return []
                     data = await resp.json()
             return data.get("data", {}).get("recentAcSubmissionList", []) or []
         except Exception:
-            log.warning("Exception fetching recent AC submissions for '%s'.", username, exc_info=True)
+            log.warning(
+                "Exception fetching recent AC submissions for '%s'.",
+                username,
+                exc_info=True,
+            )
             return []

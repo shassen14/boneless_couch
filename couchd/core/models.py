@@ -35,6 +35,7 @@ class StreamSession(Base):
     category: Mapped[str] = mapped_column(String, nullable=True)
     vod_url: Mapped[str] = mapped_column(String, nullable=True)
     peak_viewers: Mapped[int] = mapped_column(Integer, nullable=True)
+    discord_notification_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     start_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

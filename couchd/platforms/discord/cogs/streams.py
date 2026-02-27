@@ -50,7 +50,6 @@ class StreamWatcherCog(commands.Cog):
         title = stream_data.get("title", StreamDefaults.TITLE.value)
         category = stream_data.get("game_name", StreamDefaults.CATEGORY.value)
 
-        # Building URLs dynamically
         stream_url = f"{TwitchConfig.BASE_URL}{self.channel}"
 
         raw_thumbnail = stream_data.get("thumbnail_url", "")
@@ -58,80 +57,84 @@ class StreamWatcherCog(commands.Cog):
             TwitchConfig.THUMBNAIL_PLACEHOLDER_W, TwitchConfig.THUMBNAIL_WIDTH
         ).replace(TwitchConfig.THUMBNAIL_PLACEHOLDER_H, TwitchConfig.THUMBNAIL_HEIGHT)
 
-        # 1. Save to Database
+        # Guard against bot restart mid-stream
         try:
             async with get_session() as session:
-                existing_stmt = (
+                existing = (await session.execute(
                     select(StreamSession)
                     .where(
                         (StreamSession.is_active == True)
                         & (StreamSession.platform == Platform.TWITCH.value)
                     )
                     .order_by(StreamSession.start_time.desc())
-                )
-                existing_result = await session.execute(existing_stmt)
-                if existing_result.scalars().first() is not None:
+                )).scalars().first()
+                if existing is not None:
                     log.info("Active StreamSession already exists; skipping creation (bot restart mid-stream).")
                     return
+        except Exception as e:
+            log.error("Failed to check existing StreamSession", exc_info=e)
+            return
 
-                new_stream = StreamSession(
+        # Post go-live embed; capture message_id before thread creation so an error
+        # there doesn't lose the reference needed to attach the recap later.
+        message_id = None
+        try:
+            async with get_session() as session:
+                config = (await session.execute(
+                    select(GuildConfig).where(GuildConfig.stream_updates_channel_id.isnot(None))
+                )).scalar_one_or_none()
+
+            if config and config.stream_updates_channel_id:
+                discord_channel = self.bot.get_channel(config.stream_updates_channel_id)
+                if discord_channel:
+                    embed = discord.Embed(
+                        title=f"🔴 {self.channel} is LIVE on Twitch!",
+                        description=f"**{title}**\nPlaying: {category}",
+                        url=stream_url,
+                        color=BrandColors.TWITCH,
+                    )
+                    if thumbnail_url:
+                        embed.set_image(url=f"{thumbnail_url}?r={random.randint(1, 99999)}")
+
+                    msg = await discord_channel.send(embed=embed)
+                    message_id = msg.id  # captured before thread creation
+
+                    try:
+                        await msg.create_thread(name=f"🔴 {self.channel} — {title}"[:100])
+                    except Exception as e:
+                        log.warning("Failed to create thread for go-live message", exc_info=e)
+
+                    log.info(f"Sent go-live announcement to #{discord_channel.name}")
+                else:
+                    log.warning(
+                        f"Configured stream updates channel ({config.stream_updates_channel_id}) is invisible to the bot."
+                    )
+            else:
+                log.warning("No server has configured a stream_updates_channel_id. Skipping announcement.")
+        except Exception as e:
+            log.error("Failed to send Discord announcement", exc_info=e)
+
+        # Save session; Discord post happens first so message_id is available in one insert.
+        try:
+            async with get_session() as session:
+                session.add(StreamSession(
                     platform=Platform.TWITCH.value,
                     title=title,
                     category=category,
                     is_active=True,
-                )
-                session.add(new_stream)
-                log.info(
-                    f"Created active StreamSession in DB for {Platform.TWITCH.value}."
-                )
+                    discord_notification_message_id=message_id,
+                ))
+            log.info(f"Created StreamSession in DB (message_id={message_id}).")
         except Exception as e:
             log.error("Failed to create StreamSession in DB", exc_info=e)
-
-        # 2. Post to Discord
-        try:
-            async with get_session() as session:
-                # Find the server that has configured a stream updates channel
-                stmt = select(GuildConfig).where(
-                    GuildConfig.stream_updates_channel_id.isnot(None)
-                )
-                result = await session.execute(stmt)
-                config = result.scalar_one_or_none()
-
-                if config and config.stream_updates_channel_id:
-                    channel = self.bot.get_channel(config.stream_updates_channel_id)
-                    if channel:
-                        embed = discord.Embed(
-                            title=f"🔴 {self.channel} is LIVE on Twitch!",
-                            description=f"**{title}**\nPlaying: {category}",
-                            url=stream_url,
-                            color=BrandColors.TWITCH,  # Uses standard Brand color
-                        )
-                        if thumbnail_url:
-                            # Cache-busting parameter (safe random integer)
-                            embed.set_image(
-                                url=f"{thumbnail_url}?r={random.randint(1, 99999)}"
-                            )
-
-                        await channel.send(embed=embed)
-                        log.info(f"Sent Go-Live announcement to #{channel.name}")
-                    else:
-                        log.warning(
-                            f"Configured stream updates channel ({config.stream_updates_channel_id}) is invisible to the bot."
-                        )
-                else:
-                    log.warning(
-                        "No server has configured a stream_updates_channel_id. Skipping announcement."
-                    )
-        except Exception as e:
-            log.error("Failed to send Discord announcement", exc_info=e)
 
     async def handle_stream_end(self):
         stream_session = None
 
-        # Step 1: Mark session inactive, set end_time
+        # Mark session inactive, set end_time
         try:
             async with get_session() as session:
-                stmt = (
+                result = await session.execute(
                     select(StreamSession)
                     .where(
                         (StreamSession.is_active == True)
@@ -139,7 +142,6 @@ class StreamWatcherCog(commands.Cog):
                     )
                     .order_by(StreamSession.start_time.desc())
                 )
-                result = await session.execute(stmt)
                 stream_session = result.scalars().first()
 
                 if stream_session is None:
@@ -152,7 +154,7 @@ class StreamWatcherCog(commands.Cog):
                 stream_session.is_active = False
                 stream_session.end_time = datetime.now(timezone.utc)
                 log.info(
-                    "Marked active %s StreamSession (id=%d) as offline in database.",
+                    "Marked active %s StreamSession (id=%d) as offline.",
                     Platform.TWITCH.value,
                     stream_session.id,
                 )
@@ -160,21 +162,19 @@ class StreamWatcherCog(commands.Cog):
             log.error("Failed to close StreamSession in DB", exc_info=e)
             return
 
-        # Step 2: Find Discord channel
+        # Find Discord channel
         try:
             async with get_session() as session:
-                stmt = select(GuildConfig).where(
-                    GuildConfig.stream_updates_channel_id.isnot(None)
-                )
-                result = await session.execute(stmt)
-                config = result.scalar_one_or_none()
+                config = (await session.execute(
+                    select(GuildConfig).where(GuildConfig.stream_updates_channel_id.isnot(None))
+                )).scalar_one_or_none()
 
             if not config or not config.stream_updates_channel_id:
                 log.warning("No stream_updates_channel_id configured. Skipping stream summary.")
                 return
 
-            channel = self.bot.get_channel(config.stream_updates_channel_id)
-            if not channel:
+            discord_channel = self.bot.get_channel(config.stream_updates_channel_id)
+            if not discord_channel:
                 log.warning(
                     "Configured stream updates channel (%d) is invisible to the bot. Skipping summary.",
                     config.stream_updates_channel_id,
@@ -184,11 +184,9 @@ class StreamWatcherCog(commands.Cog):
             log.error("Failed to fetch GuildConfig for stream summary", exc_info=e)
             return
 
-        # Step 3: Post the summary
-        await self._post_stream_summary(stream_session, channel)
+        await self._post_stream_summary(stream_session, discord_channel)
 
     async def _post_stream_summary(self, stream_session: StreamSession, channel):
-        # Duration
         duration_str = "Unknown"
         if stream_session.start_time and stream_session.end_time:
             delta = stream_session.end_time - stream_session.start_time
@@ -240,9 +238,19 @@ class StreamWatcherCog(commands.Cog):
             lines = [f"- [{p.title}]({p.url})" if p.url else f"- {p.title}" for p in projects]
             embed.add_field(name="GitHub Projects", value="\n".join(lines), inline=False)
 
+        # Post recap in the go-live thread; fall back to channel if thread is unavailable.
+        target = channel
+        if stream_session.discord_notification_message_id:
+            try:
+                live_msg = await channel.fetch_message(stream_session.discord_notification_message_id)
+                if live_msg.thread:
+                    target = live_msg.thread
+            except Exception:
+                log.warning("Could not fetch go-live message/thread; posting recap to channel.")
+
         try:
-            await channel.send(embed=embed)
-            log.info("Sent stream recap embed to #%s.", channel.name)
+            await target.send(embed=embed)
+            log.info("Sent stream recap to %s.", getattr(target, "name", str(target.id)))
         except Exception as e:
             log.error("Failed to send stream recap embed", exc_info=e)
 
