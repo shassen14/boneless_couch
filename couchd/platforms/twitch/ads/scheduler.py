@@ -38,26 +38,20 @@ class AdScheduler:
                 if not session or self._ad_manager.has_pending():
                     continue
 
-                remaining = await self._ad_manager.get_remaining(session.id)
+                remaining = await self._ad_manager.get_remaining(session.id, session.start_time)
                 if remaining == 0:
                     continue
 
-                # How long after the last ad to wait so the new ad finishes
-                # right at the 60-min mark.
+                # Fire when block time elapsed is close enough that the ad must run now.
+                block_start = self._ad_manager.block_start(session.start_time)
+                elapsed_in_block = (datetime.now(timezone.utc) - block_start).total_seconds()
                 fire_threshold = AdConfig.WINDOW_SECONDS - remaining
-
-                last_ad = await self._ad_manager.get_last_ad_time(session.id)
-                reference = last_ad if last_ad else session.start_time
-                if reference.tzinfo is None:
-                    reference = reference.replace(tzinfo=timezone.utc)
-
-                elapsed = (datetime.now(timezone.utc) - reference).total_seconds()
-                if elapsed < fire_threshold:
+                if elapsed_in_block < fire_threshold:
                     continue
 
                 log.info(
-                    "Ad scheduler: %.0fs elapsed, threshold %.0fs — scheduling auto-ad (%ds).",
-                    elapsed,
+                    "Ad scheduler: %.0fs into block, threshold %.0fs — scheduling auto-ad (%ds).",
+                    elapsed_in_block,
                     fire_threshold,
                     remaining,
                 )

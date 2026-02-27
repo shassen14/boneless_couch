@@ -358,7 +358,7 @@ class BotCommands(commands.Component):
             return
 
         args = ctx.content.split()
-        remaining = await self.ad_manager.get_remaining(active_session.id)
+        remaining = await self.ad_manager.get_remaining(active_session.id, active_session.start_time)
         if len(args) > 1:
             try:
                 minutes = float(args[1])

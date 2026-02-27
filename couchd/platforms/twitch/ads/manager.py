@@ -13,42 +13,49 @@ log = logging.getLogger(__name__)
 
 
 class AdBudgetManager:
-    """Tracks ad spend against the per-hour budget and schedules auto-ads."""
+    """Tracks ad spend against the per-hour budget using fixed session-aligned blocks."""
 
     def __init__(self, required_minutes: int):
         self._required_seconds = required_minutes * 60
         self._pending_task: asyncio.Task | None = None
 
-    async def get_seconds_used(self, session_id: int) -> int:
-        """Sum ad durations (stored as seconds in notes) within the rolling window."""
-        cutoff = datetime.now(timezone.utc) - timedelta(seconds=AdConfig.WINDOW_SECONDS)
+    def block_start(self, session_start: datetime) -> datetime:
+        """Start of the current fixed 60-minute block for this session."""
+        now = datetime.now(timezone.utc)
+        if session_start.tzinfo is None:
+            session_start = session_start.replace(tzinfo=timezone.utc)
+        block_num = int((now - session_start).total_seconds() // AdConfig.WINDOW_SECONDS)
+        return session_start + timedelta(seconds=block_num * AdConfig.WINDOW_SECONDS)
+
+    async def get_seconds_used(self, session_id: int, session_start: datetime) -> int:
+        """Sum ad seconds logged in the current hour block."""
+        start = self.block_start(session_start)
+        end = start + timedelta(seconds=AdConfig.WINDOW_SECONDS)
         async with get_session() as db:
             stmt = select(
-                func.coalesce(
-                    func.sum(cast(StreamEvent.notes, SAInteger)), 0
-                )
+                func.coalesce(func.sum(cast(StreamEvent.notes, SAInteger)), 0)
             ).where(
                 StreamEvent.session_id == session_id,
                 StreamEvent.event_type == "ad",
-                StreamEvent.timestamp > cutoff,
+                StreamEvent.timestamp >= start,
+                StreamEvent.timestamp < end,
             )
             result = await db.execute(stmt)
             return result.scalar_one()
 
-    async def get_remaining(self, session_id: int) -> int:
-        """Return how many seconds of ads still need to run this window."""
-        used = await self.get_seconds_used(session_id)
-        return max(0, self._required_seconds - used)
+    async def get_remaining(self, session_id: int, session_start: datetime) -> int:
+        """Pro-rated ad seconds still owed in the current hour block.
 
-    async def get_last_ad_time(self, session_id: int) -> datetime | None:
-        """Return the timestamp of the most recent ad event in this session."""
-        async with get_session() as db:
-            stmt = select(func.max(StreamEvent.timestamp)).where(
-                StreamEvent.session_id == session_id,
-                StreamEvent.event_type == "ad",
-            )
-            result = await db.execute(stmt)
-            return result.scalar_one_or_none()
+        Grows linearly from 0 to required_seconds over the block.
+        Returns 0 if ads already run exceed the pro-rated amount (ahead of schedule).
+        """
+        if session_start.tzinfo is None:
+            session_start = session_start.replace(tzinfo=timezone.utc)
+        start = self.block_start(session_start)
+        elapsed_in_block = (datetime.now(timezone.utc) - start).total_seconds()
+        pro_rated = round(elapsed_in_block / AdConfig.WINDOW_SECONDS * self._required_seconds)
+        used = await self.get_seconds_used(session_id, session_start)
+        return max(0, pro_rated - used)
 
     async def log_ad(
         self, session_id: int, duration_seconds: int, vod_timestamp: str
