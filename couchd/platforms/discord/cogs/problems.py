@@ -62,14 +62,13 @@ class ProblemsWatcherCog(commands.Cog):
 
         await self._poll_streamer_solutions()
 
-        if not new_attempts:
-            return
+        if new_attempts:
+            slugs = {a.slug for a in new_attempts}
+            for slug in slugs:
+                await self._sync_problem(forum, slug)
+            self.last_processed_attempt_id = new_attempts[-1].id
 
-        slugs = {a.slug for a in new_attempts}
-        for slug in slugs:
-            await self._sync_problem(forum, slug)
-
-        self.last_processed_attempt_id = new_attempts[-1].id
+        await self._flush_pending_solutions(forum)
 
     async def _poll_streamer_solutions(self):
         if not settings.LEETCODE_USERNAME:
@@ -118,6 +117,29 @@ class ProblemsWatcherCog(commands.Cog):
                     ))
                 await db.commit()
             log.info("Auto-logged streamer solution for %s (submission %s)", attempt.slug, sub["id"])
+
+    async def _flush_pending_solutions(self, forum: discord.ForumChannel):
+        async with get_session() as db:
+            slugs = (await db.execute(
+                select(SolutionPost.problem_slug).distinct()
+                .where(SolutionPost.discord_message_id.is_(None))
+            )).scalars().all()
+
+        for slug in slugs:
+            async with get_session() as db:
+                post = (await db.execute(
+                    select(ProblemPost).where(ProblemPost.platform_id == slug)
+                )).scalar_one_or_none()
+            if not post:
+                continue
+            thread = forum.get_thread(post.forum_thread_id)
+            if not thread:
+                try:
+                    thread = await self.bot.fetch_channel(post.forum_thread_id)
+                except Exception:
+                    log.warning("Could not fetch thread for slug %s", slug)
+                    continue
+            await self._sync_solution_comments(thread, slug)
 
     async def _sync_problem(self, forum: discord.ForumChannel, slug: str):
         async with get_session() as db:

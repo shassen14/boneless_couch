@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 _LC_GRAPHQL_QUERY = """
 query questionData($titleSlug: String!) {
   question(titleSlug: $titleSlug) {
-    questionId
+    frontendQuestionId
     title
     difficulty
     topicTags {
@@ -106,7 +106,7 @@ class LeetCodeClient:
                 return None
 
             return {
-                "id": int(question["questionId"]),
+                "id": int(question["frontendQuestionId"]),
                 "title": question["title"],
                 "difficulty": question["difficulty"],
                 "tags": [t["name"] for t in question.get("topicTags", [])],
