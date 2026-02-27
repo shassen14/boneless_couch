@@ -317,7 +317,7 @@ class ProblemsWatcherCog(commands.Cog):
         for sol in rows:
             content = (
                 f"**{sol.username}** solved this (via {sol.platform})!\n"
-                f"[View Submission]({sol.url}) · VOD @ {sol.vod_timestamp}"
+                f"[View Submission]({sol.url})"
             )
             if sol.discord_message_id:
                 try:

@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, SolutionPost
+from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, SolutionPost, ProblemPost
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
@@ -70,38 +70,45 @@ class BotCommands(commands.Component):
         url = url_match.group(0)
 
         active_session = await get_active_session()
-        if not active_session:
-            return
 
         async with get_session() as db:
-            attempt_stmt = (
-                select(ProblemAttempt)
-                .join(StreamEvent)
-                .where(StreamEvent.session_id == active_session.id)
-                .order_by(StreamEvent.timestamp.desc())
-                .limit(1)
-            )
-            attempt = (await db.execute(attempt_stmt)).scalar_one_or_none()
-
-            if not attempt:
-                return
-            if slug and slug != attempt.slug:
-                return
+            if slug:
+                # Slug-bearing URL: accept for any problem that has a forum thread
+                post = (await db.execute(
+                    select(ProblemPost).where(ProblemPost.platform_id == slug)
+                )).scalar_one_or_none()
+                if not post:
+                    return
+            else:
+                # Bare URL: can't determine slug without the active problem
+                if not active_session:
+                    return
+                attempt = (await db.execute(
+                    select(ProblemAttempt)
+                    .join(StreamEvent)
+                    .where(StreamEvent.session_id == active_session.id)
+                    .order_by(StreamEvent.timestamp.desc())
+                    .limit(1)
+                )).scalar_one_or_none()
+                if not attempt:
+                    return
+                slug = attempt.slug
 
             username = payload.chatter.name
-            vod_ts = compute_vod_timestamp(active_session.start_time)
-            sol_stmt = select(SolutionPost).where(
-                SolutionPost.problem_slug == attempt.slug,
-                SolutionPost.platform == "twitch",
-                SolutionPost.username == username,
-            )
-            sol = (await db.execute(sol_stmt)).scalar_one_or_none()
+            vod_ts = compute_vod_timestamp(active_session.start_time) if active_session else None
+            sol = (await db.execute(
+                select(SolutionPost).where(
+                    SolutionPost.problem_slug == slug,
+                    SolutionPost.platform == "twitch",
+                    SolutionPost.username == username,
+                )
+            )).scalar_one_or_none()
             if sol:
                 sol.url = url
                 sol.vod_timestamp = vod_ts
             else:
                 db.add(SolutionPost(
-                    problem_slug=attempt.slug,
+                    problem_slug=slug,
                     platform="twitch",
                     username=username,
                     url=url,
@@ -109,7 +116,7 @@ class BotCommands(commands.Component):
                 ))
             await db.commit()
 
-        log.info("Logged solution from %s for %s", payload.chatter.name, attempt.slug)
+        log.info("Logged solution from %s for %s", payload.chatter.name, slug)
 
     # ------------------------------------------------------------------
     # !commands
