@@ -388,6 +388,7 @@ class BotCommands(commands.Component):
         self.ad_manager.cancel_pending()
 
         ends_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds)
+        return_time = ends_at.astimezone().strftime("%-I:%M %p")
         end_time = ends_at.strftime("%-I:%M:%S %p UTC")
 
         whole_minutes, leftover_seconds = divmod(duration_seconds, 60)
@@ -396,7 +397,7 @@ class BotCommands(commands.Component):
         log.info("Triggered %ds ad break.", duration_seconds)
 
         latest_video = await self.youtube_client.get_latest_video() if self.youtube_client else None
-        ad_msg = pick_ad_message(latest_video)
+        ad_msg = pick_ad_message(latest_video, return_time)
         if ad_msg:
             await send_chat_message(self.bot, ad_msg)
 

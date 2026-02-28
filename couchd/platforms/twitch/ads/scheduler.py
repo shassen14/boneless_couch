@@ -1,7 +1,7 @@
 # couchd/platforms/twitch/ads/scheduler.py
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from couchd.core.config import settings
 from couchd.core.models import StreamSession
@@ -80,12 +80,13 @@ class AdScheduler:
             vod_ts = compute_vod_timestamp(session.start_time)
             await self._ad_manager.log_ad(session.id, clamped, vod_ts)
 
+            return_time = (datetime.now(timezone.utc) + timedelta(seconds=clamped)).astimezone().strftime("%-I:%M %p")
             minutes = clamped // 60
             await send_chat_message(self._bot, f"🎬 Auto ad running ({minutes}m). Back soon!")
             log.info("Auto-ad complete: %ds at %s.", clamped, vod_ts)
 
             latest_video = await self._youtube_client.get_latest_video() if self._youtube_client else None
-            ad_msg = pick_ad_message(latest_video)
+            ad_msg = pick_ad_message(latest_video, return_time)
             if ad_msg:
                 await send_chat_message(self._bot, ad_msg)
         except asyncio.CancelledError:
