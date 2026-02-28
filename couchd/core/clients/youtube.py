@@ -30,9 +30,10 @@ class YouTubeRSSClient:
         Keys: video_id, title, thumbnail_url, video_url
         """
         url = YouTubeConfig.RSS_URL.format(channel_id=self.channel_id)
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; BonelessCouchBot/1.0)"}
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(url, headers=headers) as response:
                     if response.status != 200:
                         log.error(f"YouTube RSS error: {response.status}")
                         return None
@@ -46,7 +47,9 @@ class YouTubeRSSClient:
             video_id = entry.findtext("yt:videoId", namespaces=_RSS_NS) or ""
             title = entry.findtext("atom:title", namespaces=_RSS_NS) or "Untitled"
             thumbnail_el = entry.find("media:group/media:thumbnail", _RSS_NS)
-            thumbnail_url = thumbnail_el.get("url", "") if thumbnail_el is not None else ""
+            thumbnail_url = (
+                thumbnail_el.get("url", "") if thumbnail_el is not None else ""
+            )
 
             return {
                 "video_id": video_id,
