@@ -24,6 +24,7 @@ class GuildConfig(Base):
     video_updates_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     video_updates_role_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     problems_forum_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    clip_showcase_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
 
 
 class StreamSession(Base):
@@ -75,6 +76,12 @@ class StreamEvent(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    clip_log: Mapped["ClipLog | None"] = relationship(
+        "ClipLog",
+        back_populates="event",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class ProblemAttempt(Base):
@@ -110,6 +117,24 @@ class ProjectLog(Base):
 
     event: Mapped["StreamEvent"] = relationship(
         "StreamEvent", back_populates="project_log"
+    )
+
+
+class ClipLog(Base):
+    __tablename__ = "clip_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    stream_event_id: Mapped[int] = mapped_column(
+        ForeignKey("stream_events.id"), nullable=False, unique=True
+    )
+    clip_id: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    vod_timestamp: Mapped[str] = mapped_column(String, nullable=True)
+    discord_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+
+    event: Mapped["StreamEvent"] = relationship(
+        "StreamEvent", back_populates="clip_log"
     )
 
 

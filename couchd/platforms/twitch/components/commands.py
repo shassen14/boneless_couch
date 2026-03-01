@@ -9,11 +9,11 @@ from sqlalchemy import select
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, SolutionPost, ProblemPost
+from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, SolutionPost, ProblemPost, ClipLog
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
-from couchd.core.constants import CommandCooldowns
+from couchd.core.constants import CommandCooldowns, ClipConfig
 from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.messages import pick_ad_message, pick_return_message
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
@@ -129,7 +129,7 @@ class BotCommands(commands.Component):
             return
         self.cooldowns.record("commands", ctx.author.id)
 
-        public = "Commands: !lc (current problem) · !project (current project)"
+        public = "Commands: !lc (current problem) · !project (current project) · !clip [title] (create a clip)"
         if self.youtube_client:
             public += " · !newvideo (latest YouTube video)"
 
@@ -338,6 +338,59 @@ class BotCommands(commands.Component):
         except Exception:
             log.error("DB error logging project", exc_info=True)
             await ctx.reply("❌ Failed to save to DB.")
+
+    # ------------------------------------------------------------------
+    # !clip
+    # ------------------------------------------------------------------
+
+    @commands.command(name="clip")
+    async def clip_command(self, ctx: commands.Context):
+        """!clip [title] — create a Twitch clip of this moment."""
+        if self.cooldowns.check("clip", ctx.author.id, CommandCooldowns.CLIP):
+            return
+        self.cooldowns.record("clip", ctx.author.id)
+
+        args = ctx.content.split(maxsplit=1)
+        title = args[1].strip() if len(args) >= 2 else ClipConfig.DEFAULT_TITLE
+
+        active_session = await get_active_session()
+        if not active_session:
+            await ctx.reply("⚠️ No active stream session.")
+            return
+
+        try:
+            users = await self.bot.fetch_users(ids=[settings.TWITCH_OWNER_ID])
+            created = await users[0].create_clip(
+                token_for=settings.TWITCH_OWNER_ID,
+                title=title,
+                duration=ClipConfig.DURATION,
+            )
+        except Exception:
+            log.error("Failed to create Twitch clip", exc_info=True)
+            await ctx.reply("❌ Could not create clip.")
+            return
+
+        url = ClipConfig.URL_BASE + created.id
+        vod_ts = compute_vod_timestamp(active_session.start_time)
+
+        try:
+            async with get_session() as db:
+                event = StreamEvent(session_id=active_session.id, event_type="clip")
+                db.add(event)
+                await db.flush()
+                db.add(ClipLog(
+                    stream_event_id=event.id,
+                    clip_id=created.id,
+                    title=title,
+                    url=url,
+                    vod_timestamp=vod_ts,
+                ))
+                await db.commit()
+        except Exception:
+            log.error("DB error logging clip", exc_info=True)
+
+        await ctx.reply(f"✂️ Clip created: {url}")
+        log.info("Clip created: %s (%s)", title, url)
 
     # ------------------------------------------------------------------
     # !ad

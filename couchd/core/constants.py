@@ -72,6 +72,13 @@ class CommandCooldowns:
     NEWVIDEO = Cooldown(user_seconds=120, global_seconds=60)
     LC = Cooldown(user_seconds=15, global_seconds=5)
     PROJECT = Cooldown(user_seconds=15, global_seconds=5)
+    CLIP = Cooldown(user_seconds=120, global_seconds=30)
+
+
+class ClipConfig:
+    DURATION = 30
+    URL_BASE = "https://clips.twitch.tv/"
+    DEFAULT_TITLE = "No context provided. Just vibes. ✨"
 
 
 class BotConfig:

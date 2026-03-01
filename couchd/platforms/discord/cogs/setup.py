@@ -124,6 +124,17 @@ class SetupCog(commands.Cog):
         await self._update_channel_config(ctx, channel, "problems_forum_id", "Problems Forum")
 
     @setup_group.command(
+        name="clip_showcase_channel",
+        description="Set the channel where Twitch clip highlights are posted.",
+    )
+    async def set_clip_showcase(
+        self, ctx: discord.ApplicationContext, channel: discord.TextChannel
+    ):
+        await self._update_channel_config(
+            ctx, channel, "clip_showcase_channel_id", "Clip Showcase Channel"
+        )
+
+    @setup_group.command(
         name="video_updates_role",
         description="Set the role to ping when a new video is posted.",
     )
