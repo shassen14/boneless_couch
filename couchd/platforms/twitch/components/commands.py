@@ -9,11 +9,11 @@ from sqlalchemy import select
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, SolutionPost, ProblemPost, ClipLog
+from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, SolutionPost, ProblemPost, ClipLog, IdeaPost
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
-from couchd.core.constants import CommandCooldowns, ClipConfig
+from couchd.core.constants import CommandCooldowns, ClipConfig, IdeaConfig
 from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.messages import pick_ad_message, pick_return_message
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
@@ -129,7 +129,7 @@ class BotCommands(commands.Component):
             return
         self.cooldowns.record("commands", ctx.author.id)
 
-        public = "Commands: !lc (current problem) · !project (current project) · !clip [title] (create a clip)"
+        public = "Commands: !lc (current problem) · !project (current project) · !clip [title] (create a clip) · !idea <text> (submit a community idea)"
         if self.youtube_client:
             public += " · !newvideo (latest YouTube video)"
 
@@ -391,6 +391,30 @@ class BotCommands(commands.Component):
 
         await ctx.reply(f"✂️ Clip created: {url}")
         log.info("Clip created: %s (%s)", title, url)
+
+    # ------------------------------------------------------------------
+    # !idea
+    # ------------------------------------------------------------------
+
+    @commands.command(name="idea")
+    async def idea_command(self, ctx: commands.Context):
+        """!idea <text> — submit a community idea."""
+        if self.cooldowns.check("idea", ctx.author.id, CommandCooldowns.IDEA):
+            return
+        self.cooldowns.record("idea", ctx.author.id)
+
+        args = ctx.content.split(maxsplit=1)
+        if len(args) < 2 or not args[1].strip():
+            await ctx.reply("Usage: !idea <your idea text>")
+            return
+
+        text = args[1].strip()
+        async with get_session() as db:
+            db.add(IdeaPost(text=text, submitted_by=ctx.author.name, platform="twitch"))
+            await db.commit()
+
+        await ctx.reply("💡 Idea noted! The community can vote on it in Discord.")
+        log.info("Idea submitted by %s: %s", ctx.author.name, text)
 
     # ------------------------------------------------------------------
     # !ad

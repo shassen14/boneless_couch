@@ -25,6 +25,7 @@ class GuildConfig(Base):
     video_updates_role_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     problems_forum_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     clip_showcase_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    ideas_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
 
 
 class StreamSession(Base):
@@ -162,3 +163,17 @@ class SolutionPost(Base):
     discord_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
 
     __table_args__ = (UniqueConstraint("problem_slug", "platform", "username"),)
+
+
+class IdeaPost(Base):
+    __tablename__ = "idea_posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    text: Mapped[str] = mapped_column(String, nullable=False)
+    submitted_by: Mapped[str] = mapped_column(String, nullable=False)
+    platform: Mapped[str] = mapped_column(String, nullable=False)  # "twitch" | "discord"
+    discord_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    removed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

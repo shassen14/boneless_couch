@@ -73,6 +73,7 @@ class CommandCooldowns:
     LC = Cooldown(user_seconds=15, global_seconds=5)
     PROJECT = Cooldown(user_seconds=15, global_seconds=5)
     CLIP = Cooldown(user_seconds=120, global_seconds=30)
+    IDEA = Cooldown(user_seconds=30, global_seconds=10)
 
 
 class ClipConfig:
@@ -91,6 +92,12 @@ class ProblemsConfig:
     TAG_MEDIUM = "Medium"
     TAG_HARD = "Hard"
     TITLE_MAX_LEN: int = 100
+
+
+class IdeaConfig:
+    POLL_RATE_MINUTES: float = 1.0
+    REACTION_SUPPORT = "✅"
+    REACTION_AGAINST = "❌"
 
 
 class BrandColors:

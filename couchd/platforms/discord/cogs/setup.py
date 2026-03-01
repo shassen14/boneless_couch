@@ -135,6 +135,15 @@ class SetupCog(commands.Cog):
         )
 
     @setup_group.command(
+        name="ideas_channel",
+        description="Set the channel for community idea posts.",
+    )
+    async def set_ideas_channel(
+        self, ctx: discord.ApplicationContext, channel: discord.TextChannel
+    ):
+        await self._update_channel_config(ctx, channel, "ideas_channel_id", "Ideas Channel")
+
+    @setup_group.command(
         name="video_updates_role",
         description="Set the role to ping when a new video is posted.",
     )
