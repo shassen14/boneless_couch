@@ -28,7 +28,10 @@ twitchio v3 handles OAuth via a built-in web server.
 
 1. Run the bot: `python -m couchd.platforms.twitch.main`
 2. Open a **private/incognito window**, log into Twitch as the **bot account**.
-3. Visit `http://localhost:4343/oauth` and authorize.
+3. Visit the following URL and authorize (includes all required scopes):
+   ```
+   http://localhost:4343/oauth?scopes=user:read:chat+user:write:chat+user:bot+clips:edit+user:manage:whispers+moderator:manage:banned_users+moderator:manage:chat_messages+moderator:manage:announcements
+   ```
 4. The bot saves the token automatically. Subsequent runs load it without a browser step.
 
 ## 4. Grant Channel Permissions
