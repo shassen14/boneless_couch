@@ -411,6 +411,8 @@ class BotCommands(commands.Component):
                         clip_id=created.id,
                         title=title,
                         url=url,
+                        clipped_by=ctx.author.name,
+                        platform="twitch",
                         vod_timestamp=vod_ts,
                     )
                 )

@@ -131,6 +131,8 @@ class ClipLog(Base):
     clip_id: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     url: Mapped[str] = mapped_column(String, nullable=False)
+    clipped_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    platform: Mapped[str] = mapped_column(String, nullable=False)
     vod_timestamp: Mapped[str] = mapped_column(String, nullable=True)
     discord_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
 
