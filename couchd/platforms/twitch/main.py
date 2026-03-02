@@ -38,6 +38,18 @@ class TwitchBot(commands.Bot):
             bot_id=settings.TWITCH_BOT_ID,
             owner_id=settings.TWITCH_OWNER_ID,
             prefix="!",
+            scopes=twitchio.Scopes(
+                clips_edit=True,
+                channel_edit_commercial=True,
+                channel_manage_ads=True,
+                channel_read_ads=True,
+                user_write_chat=True,
+                user_read_chat=True,
+                channel_bot=True,
+                user_bot=True,
+                moderator_manage_chat_messages=True,
+                channel_manage_broadcast=True,
+            ),
         )
         self.lc_client = LeetCodeClient()
         self.ad_manager = AdBudgetManager(settings.TWITCH_AD_MINUTES_PER_HOUR)
