@@ -21,7 +21,7 @@ from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.scheduler import AdScheduler
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
 from couchd.platforms.twitch.components.commands import BotCommands
-from couchd.platforms.twitch.components.utils import get_active_session
+from couchd.core.utils import get_active_session
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(dsn=settings.SENTRY_DSN)

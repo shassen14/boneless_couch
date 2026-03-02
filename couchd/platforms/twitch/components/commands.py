@@ -26,12 +26,8 @@ from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.messages import pick_ad_message, pick_return_message
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
-from couchd.platforms.twitch.components.utils import (
-    get_active_session,
-    compute_vod_timestamp,
-    clamp_to_ad_duration,
-    send_chat_message,
-)
+from couchd.core.utils import get_active_session, compute_vod_timestamp
+from couchd.platforms.twitch.components.utils import clamp_to_ad_duration, send_chat_message
 
 log = logging.getLogger(__name__)
 
