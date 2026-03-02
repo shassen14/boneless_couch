@@ -25,25 +25,38 @@ class ClipWatcherCog(commands.Cog):
         await self.bot.wait_until_ready()
 
         async with get_session() as session:
-            config = (await session.execute(
-                select(GuildConfig).where(GuildConfig.clip_showcase_channel_id.isnot(None))
-            )).scalar_one_or_none()
+            config = (
+                await session.execute(
+                    select(GuildConfig).where(
+                        GuildConfig.clip_showcase_channel_id.isnot(None)
+                    )
+                )
+            ).scalar_one_or_none()
 
             if not config:
                 return
 
-            unposted = (await session.execute(
-                select(ClipLog)
-                .join(StreamEvent)
-                .where(ClipLog.discord_message_id.is_(None))
-            )).scalars().all()
+            unposted = (
+                (
+                    await session.execute(
+                        select(ClipLog)
+                        .join(StreamEvent)
+                        .where(ClipLog.discord_message_id.is_(None))
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
             if not unposted:
                 return
 
             channel = self.bot.get_channel(config.clip_showcase_channel_id)
             if not channel:
-                log.warning("clip_showcase_channel_id %d not visible to bot", config.clip_showcase_channel_id)
+                log.warning(
+                    "clip_showcase_channel_id %d not visible to bot",
+                    config.clip_showcase_channel_id,
+                )
                 return
 
             for clip in unposted:

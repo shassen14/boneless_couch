@@ -9,7 +9,15 @@ from sqlalchemy import select
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, SolutionPost, ProblemPost, ClipLog, IdeaPost
+from couchd.core.models import (
+    StreamEvent,
+    ProblemAttempt,
+    ProjectLog,
+    SolutionPost,
+    ProblemPost,
+    ClipLog,
+    IdeaPost,
+)
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
@@ -18,13 +26,18 @@ from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.messages import pick_ad_message, pick_return_message
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
-from couchd.platforms.twitch.components.utils import get_active_session, compute_vod_timestamp, clamp_to_ad_duration, send_chat_message
+from couchd.platforms.twitch.components.utils import (
+    get_active_session,
+    compute_vod_timestamp,
+    clamp_to_ad_duration,
+    send_chat_message,
+)
 
 log = logging.getLogger(__name__)
 
-_LC_SUBMISSION_SLUG = re.compile(r'leetcode\.com/problems/([\w-]+)/submissions/\d+')
-_LC_SUBMISSION_BARE = re.compile(r'leetcode\.com/submissions/detail/\d+')
-_URL_RE = re.compile(r'https?://\S+')
+_LC_SUBMISSION_SLUG = re.compile(r"leetcode\.com/problems/([\w-]+)/submissions/\d+")
+_LC_SUBMISSION_BARE = re.compile(r"leetcode\.com/submissions/detail/\d+")
+_URL_RE = re.compile(r"https?://\S+")
 
 
 class BotCommands(commands.Component):
@@ -74,46 +87,58 @@ class BotCommands(commands.Component):
         async with get_session() as db:
             if slug:
                 # Slug-bearing URL: accept for any problem that has a forum thread
-                post = (await db.execute(
-                    select(ProblemPost).where(ProblemPost.platform_id == slug)
-                )).scalar_one_or_none()
+                post = (
+                    await db.execute(
+                        select(ProblemPost).where(ProblemPost.platform_id == slug)
+                    )
+                ).scalar_one_or_none()
                 if not post:
                     return
             else:
                 # Bare URL: can't determine slug without the active problem
                 if not active_session:
                     return
-                attempt = (await db.execute(
-                    select(ProblemAttempt)
-                    .join(StreamEvent)
-                    .where(StreamEvent.session_id == active_session.id)
-                    .order_by(StreamEvent.timestamp.desc())
-                    .limit(1)
-                )).scalar_one_or_none()
+                attempt = (
+                    await db.execute(
+                        select(ProblemAttempt)
+                        .join(StreamEvent)
+                        .where(StreamEvent.session_id == active_session.id)
+                        .order_by(StreamEvent.timestamp.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
                 if not attempt:
                     return
                 slug = attempt.slug
 
             username = payload.chatter.name
-            vod_ts = compute_vod_timestamp(active_session.start_time) if active_session else None
-            sol = (await db.execute(
-                select(SolutionPost).where(
-                    SolutionPost.problem_slug == slug,
-                    SolutionPost.platform == "twitch",
-                    SolutionPost.username == username,
+            vod_ts = (
+                compute_vod_timestamp(active_session.start_time)
+                if active_session
+                else None
+            )
+            sol = (
+                await db.execute(
+                    select(SolutionPost).where(
+                        SolutionPost.problem_slug == slug,
+                        SolutionPost.platform == "twitch",
+                        SolutionPost.username == username,
+                    )
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
             if sol:
                 sol.url = url
                 sol.vod_timestamp = vod_ts
             else:
-                db.add(SolutionPost(
-                    problem_slug=slug,
-                    platform="twitch",
-                    username=username,
-                    url=url,
-                    vod_timestamp=vod_ts,
-                ))
+                db.add(
+                    SolutionPost(
+                        problem_slug=slug,
+                        platform="twitch",
+                        username=username,
+                        url=url,
+                        vod_timestamp=vod_ts,
+                    )
+                )
             await db.commit()
 
         log.info("Logged solution from %s for %s", payload.chatter.name, slug)
@@ -129,11 +154,9 @@ class BotCommands(commands.Component):
             return
         self.cooldowns.record("commands", ctx.author.id)
 
-        public = "Commands: !lc (current problem) · !project (current project) · !clip [title] (create a clip) · !idea <text> (submit a community idea)"
-        if self.youtube_client:
-            public += " · !newvideo (latest YouTube video)"
-
-        await ctx.reply(public)
+        await ctx.reply(
+            "Full command list: https://github.com/shassen14/boneless_couch/blob/main/docs/twitch-commands.md"
+        )
 
     # ------------------------------------------------------------------
     # !newvideo
@@ -230,18 +253,22 @@ class BotCommands(commands.Component):
 
         try:
             async with get_session() as db:
-                event = StreamEvent(session_id=active_session.id, event_type="problem_attempt")
+                event = StreamEvent(
+                    session_id=active_session.id, event_type="problem_attempt"
+                )
                 db.add(event)
                 await db.flush()
-                db.add(ProblemAttempt(
-                    stream_event_id=event.id,
-                    slug=slug,
-                    title=title_str,
-                    url=url,
-                    difficulty=data["difficulty"],
-                    rating=rating_int,
-                    vod_timestamp=vod_ts,
-                ))
+                db.add(
+                    ProblemAttempt(
+                        stream_event_id=event.id,
+                        slug=slug,
+                        title=title_str,
+                        url=url,
+                        difficulty=data["difficulty"],
+                        rating=rating_int,
+                        vod_timestamp=vod_ts,
+                    )
+                )
                 await db.commit()
 
             if rating_int is not None:
@@ -291,7 +318,9 @@ class BotCommands(commands.Component):
                 await ctx.reply("No project logged yet.")
             else:
                 if project.description:
-                    await ctx.reply(f"Now working on: {project.title} — {project.description}")
+                    await ctx.reply(
+                        f"Now working on: {project.title} — {project.description}"
+                    )
                 else:
                     await ctx.reply(f"Now working on: {project.title}")
             return
@@ -322,12 +351,14 @@ class BotCommands(commands.Component):
                 event = StreamEvent(session_id=active_session.id, event_type="project")
                 db.add(event)
                 await db.flush()
-                db.add(ProjectLog(
-                    stream_event_id=event.id,
-                    url=url,
-                    title=repo_name,
-                    description=description,
-                ))
+                db.add(
+                    ProjectLog(
+                        stream_event_id=event.id,
+                        url=url,
+                        title=repo_name,
+                        description=description,
+                    )
+                )
                 await db.commit()
 
             if description:
@@ -378,13 +409,15 @@ class BotCommands(commands.Component):
                 event = StreamEvent(session_id=active_session.id, event_type="clip")
                 db.add(event)
                 await db.flush()
-                db.add(ClipLog(
-                    stream_event_id=event.id,
-                    clip_id=created.id,
-                    title=title,
-                    url=url,
-                    vod_timestamp=vod_ts,
-                ))
+                db.add(
+                    ClipLog(
+                        stream_event_id=event.id,
+                        clip_id=created.id,
+                        title=title,
+                        url=url,
+                        vod_timestamp=vod_ts,
+                    )
+                )
                 await db.commit()
         except Exception:
             log.error("DB error logging clip", exc_info=True)
@@ -435,7 +468,9 @@ class BotCommands(commands.Component):
             return
 
         args = ctx.content.split()
-        remaining = await self.ad_manager.get_remaining(active_session.id, active_session.start_time)
+        remaining = await self.ad_manager.get_remaining(
+            active_session.id, active_session.start_time
+        )
         if len(args) > 1:
             try:
                 minutes = float(args[1])
@@ -469,11 +504,21 @@ class BotCommands(commands.Component):
         end_time = ends_at.strftime("%-I:%M:%S %p UTC")
 
         whole_minutes, leftover_seconds = divmod(duration_seconds, 60)
-        duration_label = f"{whole_minutes}m {leftover_seconds}s" if leftover_seconds else f"{whole_minutes}m"
-        await ctx.reply(f"🎬 Running {duration_label} ad — ends ~{end_time}. Time to stretch!")
+        duration_label = (
+            f"{whole_minutes}m {leftover_seconds}s"
+            if leftover_seconds
+            else f"{whole_minutes}m"
+        )
+        await ctx.reply(
+            f"🎬 Running {duration_label} ad — ends ~{end_time}. Time to stretch!"
+        )
         log.info("Triggered %ds ad break.", duration_seconds)
 
-        latest_video = await self.youtube_client.get_latest_video() if self.youtube_client else None
+        latest_video = (
+            await self.youtube_client.get_latest_video()
+            if self.youtube_client
+            else None
+        )
         ad_msg = pick_ad_message(latest_video, return_time)
         if ad_msg:
             await send_chat_message(self.bot, ad_msg)

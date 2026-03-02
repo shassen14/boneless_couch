@@ -26,9 +26,11 @@ class IdeasWatcherCog(commands.Cog):
         await self.bot.wait_until_ready()
 
         async with get_session() as db:
-            config = (await db.execute(
-                select(GuildConfig).where(GuildConfig.ideas_channel_id.isnot(None))
-            )).scalar_one_or_none()
+            config = (
+                await db.execute(
+                    select(GuildConfig).where(GuildConfig.ideas_channel_id.isnot(None))
+                )
+            ).scalar_one_or_none()
 
         if not config:
             return
@@ -38,12 +40,18 @@ class IdeasWatcherCog(commands.Cog):
             return
 
         async with get_session() as db:
-            unposted = (await db.execute(
-                select(IdeaPost)
-                .where(IdeaPost.discord_message_id.is_(None))
-                .where(IdeaPost.removed_at.is_(None))
-                .order_by(IdeaPost.created_at.asc())
-            )).scalars().all()
+            unposted = (
+                (
+                    await db.execute(
+                        select(IdeaPost)
+                        .where(IdeaPost.discord_message_id.is_(None))
+                        .where(IdeaPost.removed_at.is_(None))
+                        .order_by(IdeaPost.created_at.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
         for idea in unposted:
             try:
@@ -54,7 +62,9 @@ class IdeasWatcherCog(commands.Cog):
                     row = await db.get(IdeaPost, idea.id)
                     row.discord_message_id = msg.id
                     await db.commit()
-                log.info("Posted idea %d to channel %d", idea.id, config.ideas_channel_id)
+                log.info(
+                    "Posted idea %d to channel %d", idea.id, config.ideas_channel_id
+                )
             except Exception:
                 log.error("Failed to post idea %d", idea.id, exc_info=True)
 
@@ -70,25 +80,37 @@ class IdeasWatcherCog(commands.Cog):
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
         async with get_session() as db:
-            idea = (await db.execute(
-                select(IdeaPost).where(IdeaPost.discord_message_id == payload.message_id)
-            )).scalar_one_or_none()
+            idea = (
+                await db.execute(
+                    select(IdeaPost).where(
+                        IdeaPost.discord_message_id == payload.message_id
+                    )
+                )
+            ).scalar_one_or_none()
             if idea:
                 idea.removed_at = datetime.now(timezone.utc)
                 await db.commit()
-                log.info("Soft-deleted idea %d (message %d removed)", idea.id, payload.message_id)
+                log.info(
+                    "Soft-deleted idea %d (message %d removed)",
+                    idea.id,
+                    payload.message_id,
+                )
 
     @discord.slash_command(name="suggest", description="Submit a community idea.")
     async def suggest(self, ctx: discord.ApplicationContext, idea: str):
         async with get_session() as db:
-            db.add(IdeaPost(
-                text=idea,
-                submitted_by=ctx.author.display_name,
-                platform="discord",
-            ))
+            db.add(
+                IdeaPost(
+                    text=idea,
+                    submitted_by=ctx.author.display_name,
+                    platform="discord",
+                )
+            )
             await db.commit()
 
-        await ctx.respond("💡 Your idea has been noted! Check the ideas channel.", ephemeral=True)
+        await ctx.respond(
+            "💡 Your idea has been noted! Check the ideas channel.", ephemeral=True
+        )
         log.info("Idea submitted via /suggest by %s: %s", ctx.author.display_name, idea)
 
 

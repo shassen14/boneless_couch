@@ -121,7 +121,9 @@ class SetupCog(commands.Cog):
             channel_types=[discord.ChannelType.forum],
         ),
     ):
-        await self._update_channel_config(ctx, channel, "problems_forum_id", "Problems Forum")
+        await self._update_channel_config(
+            ctx, channel, "problems_forum_id", "Problems Forum"
+        )
 
     @setup_group.command(
         name="clip_showcase_channel",
@@ -141,7 +143,9 @@ class SetupCog(commands.Cog):
     async def set_ideas_channel(
         self, ctx: discord.ApplicationContext, channel: discord.TextChannel
     ):
-        await self._update_channel_config(ctx, channel, "ideas_channel_id", "Ideas Channel")
+        await self._update_channel_config(
+            ctx, channel, "ideas_channel_id", "Ideas Channel"
+        )
 
     @setup_group.command(
         name="video_updates_role",
@@ -171,9 +175,14 @@ class SetupCog(commands.Cog):
                 color=BrandColors.SUCCESS,
             )
             await ctx.followup.send(embed=embed, ephemeral=True)
-            log.info(f"Guild {guild_id} updated config: video_updates_role_id = {role.id}")
+            log.info(
+                f"Guild {guild_id} updated config: video_updates_role_id = {role.id}"
+            )
         except Exception as e:
-            log.error(f"Failed to update video_updates_role_id for guild {guild_id}", exc_info=e)
+            log.error(
+                f"Failed to update video_updates_role_id for guild {guild_id}",
+                exc_info=e,
+            )
             await ctx.followup.send(
                 "❌ An error occurred while saving to the database.", ephemeral=True
             )

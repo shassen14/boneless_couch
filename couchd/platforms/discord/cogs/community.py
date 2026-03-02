@@ -19,7 +19,9 @@ class CommunityCog(commands.Cog):
         self.bot = bot
         self.youtube = YouTubeRSSClient() if settings.YOUTUBE_CHANNEL_ID else None
 
-    @commands.slash_command(name="socials", description="Links to all of the streamer's social accounts.")
+    @commands.slash_command(
+        name="socials", description="Links to all of the streamer's social accounts."
+    )
     async def socials(self, ctx: discord.ApplicationContext):
         embed = discord.Embed(title="Socials", color=BrandColors.PRIMARY)
 
@@ -64,44 +66,58 @@ class CommunityCog(commands.Cog):
 
         await ctx.followup.send(embed=embed)
 
-    @commands.slash_command(name="project", description="Most recent GitHub project from the last stream.")
+    @commands.slash_command(
+        name="project", description="Most recent GitHub project from the last stream."
+    )
     async def project(self, ctx: discord.ApplicationContext):
         await ctx.defer()
         async with get_session() as session:
-            project = (await session.execute(
-                select(ProjectLog)
-                .join(StreamEvent)
-                .order_by(StreamEvent.timestamp.desc())
-                .limit(1)
-            )).scalar_one_or_none()
+            project = (
+                await session.execute(
+                    select(ProjectLog)
+                    .join(StreamEvent)
+                    .order_by(StreamEvent.timestamp.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
 
         if project is None:
             await ctx.followup.send("No project has been logged yet.")
             return
 
-        embed = discord.Embed(title=project.title, url=project.url, color=BrandColors.PRIMARY)
+        embed = discord.Embed(
+            title=project.title, url=project.url, color=BrandColors.PRIMARY
+        )
         await ctx.followup.send(embed=embed)
 
-    @commands.slash_command(name="lc", description="Most recent LeetCode problem from the last stream.")
+    @commands.slash_command(
+        name="lc", description="Most recent LeetCode problem from the last stream."
+    )
     async def lc(self, ctx: discord.ApplicationContext):
         await ctx.defer()
         async with get_session() as session:
-            attempt = (await session.execute(
-                select(ProblemAttempt)
-                .join(StreamEvent)
-                .order_by(StreamEvent.timestamp.desc())
-                .limit(1)
-            )).scalar_one_or_none()
+            attempt = (
+                await session.execute(
+                    select(ProblemAttempt)
+                    .join(StreamEvent)
+                    .order_by(StreamEvent.timestamp.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
 
         if attempt is None:
             await ctx.followup.send("No LeetCode problem has been logged yet.")
             return
 
-        embed = discord.Embed(title=attempt.title, url=attempt.url, color=BrandColors.PRIMARY)
+        embed = discord.Embed(
+            title=attempt.title, url=attempt.url, color=BrandColors.PRIMARY
+        )
         if attempt.rating is not None:
             embed.add_field(name="Rating", value=str(attempt.rating), inline=True)
         if attempt.vod_timestamp:
-            embed.add_field(name="VOD Timestamp", value=f"`{attempt.vod_timestamp}`", inline=True)
+            embed.add_field(
+                name="VOD Timestamp", value=f"`{attempt.vod_timestamp}`", inline=True
+            )
 
         await ctx.followup.send(embed=embed)
 

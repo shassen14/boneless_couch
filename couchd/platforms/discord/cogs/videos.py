@@ -83,7 +83,9 @@ class VideoWatcherCog(commands.Cog):
                 config = result.scalar_one_or_none()
 
             if not config or not config.video_updates_channel_id:
-                log.warning("No video_updates_channel_id configured. Skipping announcement.")
+                log.warning(
+                    "No video_updates_channel_id configured. Skipping announcement."
+                )
                 return
 
             channel = self.bot.get_channel(config.video_updates_channel_id)
@@ -94,7 +96,11 @@ class VideoWatcherCog(commands.Cog):
                 return
 
             mentions = self._build_mentions(config, video)
-            content = f"{mentions} New video just dropped!" if mentions else "New video just dropped!"
+            content = (
+                f"{mentions} New video just dropped!"
+                if mentions
+                else "New video just dropped!"
+            )
             message = await channel.send(content=content, embed=embed)
             log.info(f"Sent YouTube video announcement to #{channel.name}")
 

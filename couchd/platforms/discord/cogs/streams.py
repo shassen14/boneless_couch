@@ -8,7 +8,13 @@ from datetime import datetime, timezone
 from couchd.core.config import settings
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.db import get_session
-from couchd.core.models import StreamSession, GuildConfig, ProblemAttempt, ProjectLog, StreamEvent
+from couchd.core.models import (
+    StreamSession,
+    GuildConfig,
+    ProblemAttempt,
+    ProjectLog,
+    StreamEvent,
+)
 from couchd.core.constants import Platform, StreamDefaults, TwitchConfig, BrandColors
 from sqlalchemy import select
 
@@ -60,16 +66,24 @@ class StreamWatcherCog(commands.Cog):
         # Guard against bot restart mid-stream
         try:
             async with get_session() as session:
-                existing = (await session.execute(
-                    select(StreamSession)
-                    .where(
-                        (StreamSession.is_active == True)
-                        & (StreamSession.platform == Platform.TWITCH.value)
+                existing = (
+                    (
+                        await session.execute(
+                            select(StreamSession)
+                            .where(
+                                (StreamSession.is_active == True)
+                                & (StreamSession.platform == Platform.TWITCH.value)
+                            )
+                            .order_by(StreamSession.start_time.desc())
+                        )
                     )
-                    .order_by(StreamSession.start_time.desc())
-                )).scalars().first()
+                    .scalars()
+                    .first()
+                )
                 if existing is not None:
-                    log.info("Active StreamSession already exists; skipping creation (bot restart mid-stream).")
+                    log.info(
+                        "Active StreamSession already exists; skipping creation (bot restart mid-stream)."
+                    )
                     return
         except Exception as e:
             log.error("Failed to check existing StreamSession", exc_info=e)
@@ -80,9 +94,13 @@ class StreamWatcherCog(commands.Cog):
         message_id = None
         try:
             async with get_session() as session:
-                config = (await session.execute(
-                    select(GuildConfig).where(GuildConfig.stream_updates_channel_id.isnot(None))
-                )).scalar_one_or_none()
+                config = (
+                    await session.execute(
+                        select(GuildConfig).where(
+                            GuildConfig.stream_updates_channel_id.isnot(None)
+                        )
+                    )
+                ).scalar_one_or_none()
 
             if config and config.stream_updates_channel_id:
                 discord_channel = self.bot.get_channel(config.stream_updates_channel_id)
@@ -94,15 +112,21 @@ class StreamWatcherCog(commands.Cog):
                         color=BrandColors.TWITCH,
                     )
                     if thumbnail_url:
-                        embed.set_image(url=f"{thumbnail_url}?r={random.randint(1, 99999)}")
+                        embed.set_image(
+                            url=f"{thumbnail_url}?r={random.randint(1, 99999)}"
+                        )
 
                     msg = await discord_channel.send(embed=embed)
                     message_id = msg.id  # captured before thread creation
 
                     try:
-                        await msg.create_thread(name=f"🔴 {self.channel} — {title}"[:100])
+                        await msg.create_thread(
+                            name=f"🔴 {self.channel} — {title}"[:100]
+                        )
                     except Exception as e:
-                        log.warning("Failed to create thread for go-live message", exc_info=e)
+                        log.warning(
+                            "Failed to create thread for go-live message", exc_info=e
+                        )
 
                     log.info(f"Sent go-live announcement to #{discord_channel.name}")
                 else:
@@ -110,20 +134,24 @@ class StreamWatcherCog(commands.Cog):
                         f"Configured stream updates channel ({config.stream_updates_channel_id}) is invisible to the bot."
                     )
             else:
-                log.warning("No server has configured a stream_updates_channel_id. Skipping announcement.")
+                log.warning(
+                    "No server has configured a stream_updates_channel_id. Skipping announcement."
+                )
         except Exception as e:
             log.error("Failed to send Discord announcement", exc_info=e)
 
         # Save session; Discord post happens first so message_id is available in one insert.
         try:
             async with get_session() as session:
-                session.add(StreamSession(
-                    platform=Platform.TWITCH.value,
-                    title=title,
-                    category=category,
-                    is_active=True,
-                    discord_notification_message_id=message_id,
-                ))
+                session.add(
+                    StreamSession(
+                        platform=Platform.TWITCH.value,
+                        title=title,
+                        category=category,
+                        is_active=True,
+                        discord_notification_message_id=message_id,
+                    )
+                )
             log.info(f"Created StreamSession in DB (message_id={message_id}).")
         except Exception as e:
             log.error("Failed to create StreamSession in DB", exc_info=e)
@@ -165,12 +193,18 @@ class StreamWatcherCog(commands.Cog):
         # Find Discord channel
         try:
             async with get_session() as session:
-                config = (await session.execute(
-                    select(GuildConfig).where(GuildConfig.stream_updates_channel_id.isnot(None))
-                )).scalar_one_or_none()
+                config = (
+                    await session.execute(
+                        select(GuildConfig).where(
+                            GuildConfig.stream_updates_channel_id.isnot(None)
+                        )
+                    )
+                ).scalar_one_or_none()
 
             if not config or not config.stream_updates_channel_id:
-                log.warning("No stream_updates_channel_id configured. Skipping stream summary.")
+                log.warning(
+                    "No stream_updates_channel_id configured. Skipping stream summary."
+                )
                 return
 
             discord_channel = self.bot.get_channel(config.stream_updates_channel_id)
@@ -205,19 +239,35 @@ class StreamWatcherCog(commands.Cog):
         )
         embed.add_field(name="Duration", value=duration_str, inline=True)
         if stream_session.peak_viewers is not None:
-            embed.add_field(name="Peak Viewers", value=str(stream_session.peak_viewers), inline=True)
+            embed.add_field(
+                name="Peak Viewers", value=str(stream_session.peak_viewers), inline=True
+            )
 
         async with get_session() as db:
-            attempts = (await db.execute(
-                select(ProblemAttempt).join(StreamEvent)
-                .where(StreamEvent.session_id == stream_session.id)
-                .order_by(StreamEvent.timestamp)
-            )).scalars().all()
-            projects = (await db.execute(
-                select(ProjectLog).join(StreamEvent)
-                .where(StreamEvent.session_id == stream_session.id)
-                .order_by(StreamEvent.timestamp)
-            )).scalars().all()
+            attempts = (
+                (
+                    await db.execute(
+                        select(ProblemAttempt)
+                        .join(StreamEvent)
+                        .where(StreamEvent.session_id == stream_session.id)
+                        .order_by(StreamEvent.timestamp)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            projects = (
+                (
+                    await db.execute(
+                        select(ProjectLog)
+                        .join(StreamEvent)
+                        .where(StreamEvent.session_id == stream_session.id)
+                        .order_by(StreamEvent.timestamp)
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
         if attempts:
             lines = []
@@ -235,22 +285,32 @@ class StreamWatcherCog(commands.Cog):
             )
 
         if projects:
-            lines = [f"- [{p.title}]({p.url})" if p.url else f"- {p.title}" for p in projects]
-            embed.add_field(name="GitHub Projects", value="\n".join(lines), inline=False)
+            lines = [
+                f"- [{p.title}]({p.url})" if p.url else f"- {p.title}" for p in projects
+            ]
+            embed.add_field(
+                name="GitHub Projects", value="\n".join(lines), inline=False
+            )
 
         # Post recap in the go-live thread; fall back to channel if thread is unavailable.
         target = channel
         if stream_session.discord_notification_message_id:
             try:
-                live_msg = await channel.fetch_message(stream_session.discord_notification_message_id)
+                live_msg = await channel.fetch_message(
+                    stream_session.discord_notification_message_id
+                )
                 if live_msg.thread:
                     target = live_msg.thread
             except Exception:
-                log.warning("Could not fetch go-live message/thread; posting recap to channel.")
+                log.warning(
+                    "Could not fetch go-live message/thread; posting recap to channel."
+                )
 
         try:
             await target.send(embed=embed)
-            log.info("Sent stream recap to %s.", getattr(target, "name", str(target.id)))
+            log.info(
+                "Sent stream recap to %s.", getattr(target, "name", str(target.id))
+            )
         except Exception as e:
             log.error("Failed to send stream recap embed", exc_info=e)
 
