@@ -89,10 +89,15 @@ class ClipWatcherCog(commands.Cog):
                 try:
                     msg = await channel.send(embed=embed)
                     clip.discord_message_id = msg.id
-                    await msg.create_thread(name=f"💬 {clip.title}"[:100])
                     log.info("Posted clip to #%s: %s", channel.name, clip.title)
                 except Exception:
                     log.error("Failed to post clip %s", clip.clip_id, exc_info=True)
+                    continue
+
+                try:
+                    await msg.create_thread(name=f"💬 {clip.title}"[:100])
+                except Exception:
+                    log.error("Failed to create thread for clip %s", clip.clip_id, exc_info=True)
 
             await session.commit()
 
