@@ -20,7 +20,11 @@ from couchd.core.clients.github import GitHubClient
 from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.scheduler import AdScheduler
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
-from couchd.platforms.twitch.components.commands import BotCommands
+from couchd.platforms.twitch.components.lc_commands import LCCommands
+from couchd.platforms.twitch.components.project_commands import ProjectCommands
+from couchd.platforms.twitch.components.activity_commands import ActivityCommands
+from couchd.platforms.twitch.components.ad_commands import AdCommands
+from couchd.platforms.twitch.components.general_commands import GeneralCommands
 from couchd.core.utils import get_active_session
 
 if settings.SENTRY_DSN:
@@ -62,16 +66,11 @@ class TwitchBot(commands.Bot):
     async def setup_hook(self) -> None:
         await self.lc_client.load_ratings()
 
-        await self.add_component(
-            BotCommands(
-                self,
-                self.lc_client,
-                self.ad_manager,
-                self.metrics_tracker,
-                self.github_client,
-                self.youtube_client,
-            )
-        )
+        await self.add_component(LCCommands(self.lc_client, self.metrics_tracker))
+        await self.add_component(ProjectCommands(self.github_client))
+        await self.add_component(ActivityCommands())
+        await self.add_component(AdCommands(self, self.ad_manager, self.youtube_client))
+        await self.add_component(GeneralCommands(self, self.youtube_client))
 
         # Subscribe to chat on startup (works after token is saved).
         # On first run this will fail gracefully — auth happens via event_oauth_authorized.

@@ -6,20 +6,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from couchd.core.models import ProblemAttempt, ProblemPost, SolutionPost, StreamEvent, StreamSession
-from couchd.platforms.twitch.components.commands import BotCommands
+from couchd.platforms.twitch.components.lc_commands import LCCommands
 
 _START_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
 def bot_commands():
-    return BotCommands(
-        bot=MagicMock(),
+    return LCCommands(
         lc_client=MagicMock(),
-        ad_manager=MagicMock(),
         metrics_tracker=MagicMock(),
-        github_client=MagicMock(),
-        youtube_client=None,
     )
 
 
@@ -69,8 +65,8 @@ async def test_slug_url_with_forum_post_logs_solution(bot_commands):
     db = _mock_db(post, None)  # post found, no existing solution
 
     with (
-        patch("couchd.platforms.twitch.components.commands.get_active_session", AsyncMock(return_value=None)),
-        patch("couchd.platforms.twitch.components.commands.get_session", _make_get_session(db)),
+        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=None)),
+        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
     ):
         await bot_commands._check_solution_url(
             _payload("https://leetcode.com/problems/two-sum/submissions/123456/")
@@ -89,9 +85,9 @@ async def test_slug_url_with_active_session_captures_vod_timestamp(bot_commands)
     db = _mock_db(post, None)
 
     with (
-        patch("couchd.platforms.twitch.components.commands.get_active_session", AsyncMock(return_value=_stream_session())),
-        patch("couchd.platforms.twitch.components.commands.get_session", _make_get_session(db)),
-        patch("couchd.platforms.twitch.components.commands.compute_vod_timestamp", return_value="00h30m00s"),
+        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=_stream_session())),
+        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
+        patch("couchd.platforms.twitch.components.lc_commands.compute_vod_timestamp", return_value="00h30m00s"),
     ):
         await bot_commands._check_solution_url(
             _payload("https://leetcode.com/problems/two-sum/submissions/123456/")
@@ -106,8 +102,8 @@ async def test_slug_url_no_forum_post_skips(bot_commands):
     db = _mock_db(None)
 
     with (
-        patch("couchd.platforms.twitch.components.commands.get_active_session", AsyncMock(return_value=None)),
-        patch("couchd.platforms.twitch.components.commands.get_session", _make_get_session(db)),
+        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=None)),
+        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
     ):
         await bot_commands._check_solution_url(
             _payload("https://leetcode.com/problems/two-sum/submissions/123456/")
@@ -123,8 +119,8 @@ async def test_slug_url_updates_existing_solution(bot_commands):
     db = _mock_db(post, existing)
 
     with (
-        patch("couchd.platforms.twitch.components.commands.get_active_session", AsyncMock(return_value=None)),
-        patch("couchd.platforms.twitch.components.commands.get_session", _make_get_session(db)),
+        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=None)),
+        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
     ):
         await bot_commands._check_solution_url(
             _payload("https://leetcode.com/problems/two-sum/submissions/999/")
@@ -144,9 +140,9 @@ async def test_bare_url_with_active_session_logs_solution(bot_commands):
     db = _mock_db(attempt, None)
 
     with (
-        patch("couchd.platforms.twitch.components.commands.get_active_session", AsyncMock(return_value=session)),
-        patch("couchd.platforms.twitch.components.commands.get_session", _make_get_session(db)),
-        patch("couchd.platforms.twitch.components.commands.compute_vod_timestamp", return_value="00h30m00s"),
+        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=session)),
+        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
+        patch("couchd.platforms.twitch.components.lc_commands.compute_vod_timestamp", return_value="00h30m00s"),
     ):
         await bot_commands._check_solution_url(
             _payload("https://leetcode.com/submissions/detail/999/")
@@ -160,8 +156,8 @@ async def test_bare_url_no_active_session_skips(bot_commands):
     db = AsyncMock()
 
     with (
-        patch("couchd.platforms.twitch.components.commands.get_active_session", AsyncMock(return_value=None)),
-        patch("couchd.platforms.twitch.components.commands.get_session", _make_get_session(db)),
+        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=None)),
+        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
     ):
         await bot_commands._check_solution_url(
             _payload("https://leetcode.com/submissions/detail/999/")
@@ -173,6 +169,6 @@ async def test_bare_url_no_active_session_skips(bot_commands):
 # ── misc ──────────────────────────────────────────────────────────────────────
 
 async def test_non_lc_url_skips_immediately(bot_commands):
-    with patch("couchd.platforms.twitch.components.commands.get_active_session") as mock_get:
+    with patch("couchd.platforms.twitch.components.lc_commands.get_active_session") as mock_get:
         await bot_commands._check_solution_url(_payload("https://github.com/user/repo"))
     mock_get.assert_not_called()

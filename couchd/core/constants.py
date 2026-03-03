@@ -74,6 +74,7 @@ class CommandCooldowns:
     PROJECT = Cooldown(user_seconds=15, global_seconds=5)
     CLIP = Cooldown(user_seconds=120, global_seconds=30)
     IDEA = Cooldown(user_seconds=30, global_seconds=10)
+    SIMPLE = Cooldown(user_seconds=15, global_seconds=5)
 
 
 class ClipConfig:
