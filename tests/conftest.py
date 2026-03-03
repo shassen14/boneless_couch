@@ -27,7 +27,7 @@ sys.modules["couchd.core.config"] = _config_mod
 
 # ── Safe to import couchd after the patch ────────────────────────────────────
 from couchd.core.db import Base  # noqa: E402
-from couchd.core.models import StreamEvent, StreamSession  # noqa: E402
+from couchd.core.models import ProblemAttempt, StreamEvent, StreamSession  # noqa: E402
 
 
 @pytest.fixture
@@ -81,17 +81,22 @@ async def stream_session(db_session):
 
 @pytest.fixture
 async def lc_event(db_session, stream_session):
-    obj = StreamEvent(
+    event = StreamEvent(
         session_id=stream_session.id,
-        event_type="leetcode",
+        event_type="problem_attempt",
+    )
+    db_session.add(event)
+    await db_session.flush()
+    attempt = ProblemAttempt(
+        stream_event_id=event.id,
+        slug="two-sum",
         title="1. Two Sum",
         url="https://leetcode.com/problems/two-sum/",
-        platform_id="two-sum",
-        status="Easy",
+        difficulty="Easy",
         rating=1200,
         vod_timestamp="00h10m00s",
     )
-    db_session.add(obj)
+    db_session.add(attempt)
     await db_session.commit()
-    await db_session.refresh(obj)
-    return obj
+    await db_session.refresh(attempt)
+    return attempt
