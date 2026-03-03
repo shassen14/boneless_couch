@@ -58,17 +58,3 @@ TWITCH_AD_MINUTES_PER_HOUR=3
 # Optional — enables !newvideo command and post-ad video messages
 YOUTUBE_CHANNEL_ID=""
 ```
-
-## 6. Chat Commands
-
-| Command | Who | Description |
-|---|---|---|
-| `!commands` | Everyone | List available commands |
-| `!lc` | Everyone | Show current LeetCode problem |
-| `!project` | Everyone | Show current GitHub project |
-| `!newvideo` | Everyone | Latest YouTube video title + link |
-| `!lc <url>` | Mod/Broadcaster | Log a LeetCode solve |
-| `!project <url>` | Mod/Broadcaster | Set active GitHub project |
-| `!ad [mins]` | Mod/Broadcaster | Run an ad (e.g. `!ad 1.5` for 90s) |
-
-Viewer commands are rate-limited (per-user and global cooldowns). Durations are in `CommandCooldowns` in `constants.py`.
