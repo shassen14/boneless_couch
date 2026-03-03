@@ -1,4 +1,4 @@
-# tests/integration/test_problems_forum.py
+# tests/integration/platforms/discord/test_problems_forum.py
 #
 # Tests the problems forum functions against a real SQLite in-memory database.
 # External services (LeetCode API, Discord) are mocked; only the DB layer is real.

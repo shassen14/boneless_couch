@@ -1,4 +1,4 @@
-# tests/unit/test_solution_detection.py
+# tests/unit/platforms/twitch/test_solution_detection.py
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch

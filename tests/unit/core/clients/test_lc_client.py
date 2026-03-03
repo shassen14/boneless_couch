@@ -1,4 +1,4 @@
-# tests/unit/test_lc_client.py
+# tests/unit/core/clients/test_lc_client.py
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
