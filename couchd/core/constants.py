@@ -39,6 +39,7 @@ class AdConfig:
 
 
 class LeetCodeConfig:
+    BASE_URL = "https://leetcode.com"
     GRAPHQL_URL = "https://leetcode.com/graphql"
     SUBMISSION_URL = "https://leetcode.com/submissions/detail/{}/"
 
@@ -93,6 +94,10 @@ class ProblemsConfig:
     TAG_MEDIUM = "Medium"
     TAG_HARD = "Hard"
     TITLE_MAX_LEN: int = 100
+
+
+class StatusConfig:
+    POLL_RATE_MINUTES: int = 5
 
 
 class IdeaConfig:

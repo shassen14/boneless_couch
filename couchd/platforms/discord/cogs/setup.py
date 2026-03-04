@@ -148,6 +148,17 @@ class SetupCog(commands.Cog):
         )
 
     @setup_group.command(
+        name="status_channel",
+        description="Set the bot status dashboard channel.",
+    )
+    async def set_status_channel(
+        self, ctx: discord.ApplicationContext, channel: discord.TextChannel
+    ):
+        await self._update_channel_config(
+            ctx, channel, "status_channel_id", "Status Channel"
+        )
+
+    @setup_group.command(
         name="video_updates_role",
         description="Set the role to ping when a new video is posted.",
     )

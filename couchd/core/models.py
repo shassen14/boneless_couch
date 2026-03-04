@@ -26,6 +26,7 @@ class GuildConfig(Base):
     problems_forum_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     clip_showcase_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     ideas_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    status_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
 
 
 class StreamSession(Base):

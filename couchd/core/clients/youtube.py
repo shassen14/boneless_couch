@@ -34,9 +34,14 @@ class YouTubeRSSClient:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as response:
-                    if response.status != 200:
-                        log.error(f"YouTube RSS error: {response.status}")
+                    if response.status == 404:
                         return None
+                    if response.status != 200:
+                        raise aiohttp.ClientResponseError(
+                            response.request_info,
+                            response.history,
+                            status=response.status,
+                        )
                     text = await response.text()
 
             root = ET.fromstring(text)
