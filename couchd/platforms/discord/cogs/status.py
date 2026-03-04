@@ -41,7 +41,7 @@ class StatusWatcherCog(commands.Cog):
     def cog_unload(self):
         self.update_status.cancel()
 
-    @tasks.loop(minutes=StatusConfig.POLL_MINUTES)
+    @tasks.loop(minutes=StatusConfig.POLL_RATE_MINUTES)
     async def update_status(self):
         await self.bot.wait_until_ready()
 
@@ -87,7 +87,9 @@ class StatusWatcherCog(commands.Cog):
         try:
             timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession() as session:
-                async with session.head(LeetCodeConfig.BASE_URL, timeout=timeout) as resp:
+                async with session.head(
+                    LeetCodeConfig.BASE_URL, timeout=timeout
+                ) as resp:
                     if resp.status < 500:
                         return True, "Reachable"
                     return False, f"HTTP {resp.status}"
@@ -102,7 +104,9 @@ class StatusWatcherCog(commands.Cog):
             color=BrandColors.SUCCESS if all_ok else BrandColors.ERROR,
         )
         for check, (ok, msg) in zip(self._checks, results):
-            embed.add_field(name=check.label, value=f"{'✅' if ok else '❌'} {msg}", inline=False)
+            embed.add_field(
+                name=check.label, value=f"{'✅' if ok else '❌'} {msg}", inline=False
+            )
         embed.set_footer(text=f"Last updated: {now}")
         return embed
 
