@@ -10,7 +10,7 @@ from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.core.utils import get_active_session, compute_vod_timestamp
 from couchd.platforms.twitch.components.utils import clamp_to_ad_duration, send_chat_message
-from couchd.platforms.twitch.ads.messages import pick_ad_message
+from couchd.platforms.twitch.ads.messages import pick_ad_message, pick_return_message
 
 log = logging.getLogger(__name__)
 
@@ -81,15 +81,21 @@ class AdScheduler:
             vod_ts = compute_vod_timestamp(session.start_time)
             await self._ad_manager.log_ad(session.id, clamped, vod_ts)
 
-            return_time = (datetime.now(timezone.utc) + timedelta(seconds=clamped)).astimezone().strftime("%-I:%M %p")
-            minutes = clamped // 60
-            await send_chat_message(self._bot, f"🎬 Auto ad running ({minutes}m). Back soon!")
+            ends_at = datetime.now(timezone.utc) + timedelta(seconds=clamped)
+            return_time = ends_at.astimezone().strftime("%-I:%M %p")
+            end_time = ends_at.strftime("%-I:%M:%S %p UTC")
+            whole_minutes, leftover_seconds = divmod(clamped, 60)
+            duration_label = f"{whole_minutes}m {leftover_seconds}s" if leftover_seconds else f"{whole_minutes}m"
+            await send_chat_message(self._bot, f"🎬 {duration_label} ad — ends ~{end_time}. Time to stretch!")
             log.info("Auto-ad complete: %ds at %s.", clamped, vod_ts)
 
             latest_video = await self._youtube_client.get_latest_video() if self._youtube_client else None
             ad_msg = pick_ad_message(latest_video, return_time)
             if ad_msg:
                 await send_chat_message(self._bot, ad_msg)
+
+            await asyncio.sleep(clamped)
+            await send_chat_message(self._bot, pick_return_message())
         except asyncio.CancelledError:
             log.info("Auto-ad task cancelled (manual ad ran first).")
         except Exception:
