@@ -4,6 +4,26 @@ import discord
 from dataclasses import dataclass
 
 
+class EventType(str, Enum):
+    PROBLEM_ATTEMPT = "problem_attempt"
+    PROJECT = "project"
+    GAME = "game"
+    EDIT = "edit"
+    TOPIC = "topic"
+    TASK = "task"
+
+
+TASK_DONE = "done"
+
+MACRO_EVENT_TYPES = frozenset({
+    EventType.PROBLEM_ATTEMPT,
+    EventType.PROJECT,
+    EventType.GAME,
+    EventType.EDIT,
+    EventType.TOPIC,
+})
+
+
 class Platform(str, Enum):
     TWITCH = "twitch"
     YOUTUBE = "youtube"
