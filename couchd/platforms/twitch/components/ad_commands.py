@@ -39,9 +39,7 @@ class AdCommands(commands.Component):
             return
 
         args = ctx.content.split()
-        remaining = await self.ad_manager.get_remaining(
-            active_session.id, active_session.start_time
-        )
+        remaining = await self.ad_manager.get_remaining(active_session.id)
         if len(args) > 1:
             try:
                 minutes = float(args[1])

@@ -39,21 +39,24 @@ class AdScheduler:
                 if not session or self._ad_manager.has_pending():
                     continue
 
-                remaining = await self._ad_manager.get_remaining(session.id, session.start_time)
+                remaining = await self._ad_manager.get_remaining(session.id)
                 if remaining == 0:
                     continue
 
-                # Fire when block time elapsed is close enough that the ad must run now.
-                block_start = self._ad_manager.block_start(session.start_time)
-                elapsed_in_block = (datetime.now(timezone.utc) - block_start).total_seconds()
-                fire_threshold = AdConfig.WINDOW_SECONDS - remaining
-                if elapsed_in_block < fire_threshold:
+                # Fire when enough time has passed since the last ad (or stream start)
+                # that the remaining budget can't be deferred further.
+                last_ad_time = await self._ad_manager.get_last_ad_time(session.id)
+                reference = last_ad_time if last_ad_time else session.start_time
+                if reference.tzinfo is None:
+                    reference = reference.replace(tzinfo=timezone.utc)
+                elapsed = (datetime.now(timezone.utc) - reference).total_seconds()
+                if elapsed < AdConfig.WINDOW_SECONDS - remaining:
                     continue
 
                 log.info(
-                    "Ad scheduler: %.0fs into block, threshold %.0fs — scheduling auto-ad (%ds).",
-                    elapsed_in_block,
-                    fire_threshold,
+                    "Ad scheduler: %.0fs since reference, threshold %.0fs — scheduling auto-ad (%ds).",
+                    elapsed,
+                    AdConfig.WINDOW_SECONDS - remaining,
                     remaining,
                 )
                 self._ad_manager._pending_task = asyncio.create_task(

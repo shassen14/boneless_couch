@@ -10,6 +10,7 @@ from couchd.core.clients.twitch import TwitchClient
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, GuildConfig
 from couchd.core.constants import Platform, StreamDefaults, TwitchConfig, BrandColors
+from couchd.core.utils import get_active_session
 from sqlalchemy import select
 from couchd.platforms.discord.components.streams_recap import post_stream_recap
 
@@ -24,6 +25,12 @@ class StreamWatcherCog(commands.Cog):
 
         self.was_live_last_check = False
         self.check_twitch_status.start()
+
+    async def cog_load(self):
+        session = await get_active_session()
+        if session:
+            self.was_live_last_check = True
+            log.info("Bot restarted mid-stream — resuming stream tracking (session id=%d).", session.id)
 
     def cog_unload(self):
         self.check_twitch_status.cancel()
