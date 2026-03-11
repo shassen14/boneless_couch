@@ -1,9 +1,9 @@
 # couchd/platforms/twitch/ads/manager.py
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
-from sqlalchemy import func, cast, Integer as SAInteger, select
+from sqlalchemy import select
 
 from couchd.core.db import get_session
 from couchd.core.models import StreamEvent
@@ -13,30 +13,26 @@ log = logging.getLogger(__name__)
 
 
 class AdBudgetManager:
-    """Tracks ad spend against the per-hour budget using a rolling 60-minute window."""
+    """Tracks ad spend against the per-hour budget using time-based accumulation."""
 
     def __init__(self, required_minutes: int):
         self._required_seconds = required_minutes * 60
         self._pending_task: asyncio.Task | None = None
 
-    async def get_seconds_used(self, session_id: int) -> int:
-        """Sum ad seconds logged in the last 60-minute rolling window."""
-        since = datetime.now(timezone.utc) - timedelta(seconds=AdConfig.WINDOW_SECONDS)
-        async with get_session() as db:
-            stmt = select(
-                func.coalesce(func.sum(cast(StreamEvent.notes, SAInteger)), 0)
-            ).where(
-                StreamEvent.session_id == session_id,
-                StreamEvent.event_type == "ad",
-                StreamEvent.timestamp >= since,
-            )
-            result = await db.execute(stmt)
-            return result.scalar_one()
-
-    async def get_remaining(self, session_id: int) -> int:
-        """Ad seconds still owed in the current rolling window."""
-        used = await self.get_seconds_used(session_id)
-        return max(0, self._required_seconds - used)
+    async def get_remaining(self, session_id: int, session_start: datetime) -> int:
+        """
+        Ad seconds accumulated since the last ad (or stream start), capped at the hourly budget.
+        Budget accrues at required/hour. 30 min after a 3-min-budget ad → 90s available.
+        """
+        last_ad = await self.get_last_ad_time(session_id)
+        reference = last_ad if last_ad else session_start
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=timezone.utc)
+        elapsed = min(
+            (datetime.now(timezone.utc) - reference).total_seconds(),
+            AdConfig.WINDOW_SECONDS,
+        )
+        return int(elapsed * self._required_seconds / AdConfig.WINDOW_SECONDS)
 
     async def get_last_ad_time(self, session_id: int) -> datetime | None:
         """Timestamp of the most recent ad event for this session, or None."""
