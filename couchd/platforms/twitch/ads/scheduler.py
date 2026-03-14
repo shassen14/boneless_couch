@@ -57,7 +57,7 @@ class AdScheduler:
                     remaining,
                 )
                 self._ad_manager._pending_task = asyncio.create_task(
-                    self._warn_then_ad(session, remaining)
+                    self._warn_then_ad(session, self._ad_manager._required_seconds)
                 )
             except Exception:
                 log.error("Error in ad scheduler loop", exc_info=True)
