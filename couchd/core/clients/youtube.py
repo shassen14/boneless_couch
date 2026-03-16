@@ -62,6 +62,12 @@ class YouTubeRSSClient:
                 "thumbnail_url": thumbnail_url,
                 "video_url": f"{YouTubeConfig.VIDEO_URL}{video_id}",
             }
+        except aiohttp.ClientResponseError as e:
+            if e.status >= 500:
+                log.debug("YouTube RSS feed returned %s, skipping", e.status)
+            else:
+                log.error("Exception while fetching YouTube RSS feed", exc_info=e)
+            return None
         except Exception as e:
             log.error("Exception while fetching YouTube RSS feed", exc_info=e)
             return None
