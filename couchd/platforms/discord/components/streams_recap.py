@@ -1,6 +1,7 @@
 # couchd/platforms/discord/components/streams_recap.py
 import logging
 from dataclasses import dataclass, field as dc_field
+from datetime import datetime
 
 import discord
 from sqlalchemy import select
@@ -17,7 +18,8 @@ class _Segment:
     event_type: str
     notes: str | None
     detail: object | None
-    tasks: list[str] = dc_field(default_factory=list)
+    time_str: str | None = None
+    tasks: list[tuple[str, str | None]] = dc_field(default_factory=list)
 
 
 def _duration_str(session: StreamSession) -> str:
@@ -29,8 +31,21 @@ def _duration_str(session: StreamSession) -> str:
     return f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
 
 
-def _task_lines(tasks: list[str]) -> str:
-    return "".join(f"\n  → {t}" for t in tasks)
+def _format_elapsed(ts: datetime, start: datetime) -> str:
+    total = max(0, int((ts - start).total_seconds()))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02}:{s:02}" if h else f"{m}:{s:02}"
+
+
+def _task_lines(tasks: list[tuple[str, str | None]]) -> str:
+    parts = []
+    for text, ts in tasks:
+        line = f"  → {text}"
+        if ts:
+            line += f" `{ts}`"
+        parts.append(f"\n{line}")
+    return "".join(parts)
 
 
 def _render_lc(seg: _Segment) -> str:
@@ -42,8 +57,9 @@ def _render_lc(seg: _Segment) -> str:
         text += f" · {a.difficulty}"
     if a.rating is not None:
         text += f" · {a.rating}"
-    if a.vod_timestamp:
-        text += f" · `{a.vod_timestamp}`"
+    ts = a.vod_timestamp or seg.time_str
+    if ts:
+        text += f" · `{ts}`"
     return f"- {text}" + _task_lines(seg.tasks)
 
 
@@ -54,11 +70,16 @@ def _render_project(seg: _Segment) -> str:
     text = f"[{p.title}]({p.url})" if p.url else p.title
     if p.description:
         text += f" · {p.description}"
+    if seg.time_str:
+        text += f" · `{seg.time_str}`"
     return f"- {text}" + _task_lines(seg.tasks)
 
 
 def _render_simple(seg: _Segment) -> str:
-    return f"- {seg.notes or '—'}" + _task_lines(seg.tasks)
+    text = seg.notes or "—"
+    if seg.time_str:
+        text += f" · `{seg.time_str}`"
+    return f"- {text}" + _task_lines(seg.tasks)
 
 
 def _add_field(embed: discord.Embed, name: str, segs: list[_Segment], renderer) -> None:
@@ -99,14 +120,16 @@ async def post_stream_recap(stream_session: StreamSession, channel):
             ).scalars().all()
         }
 
+    start = stream_session.start_time
     segments: list[_Segment] = []
     for event in all_events:
+        time_str = _format_elapsed(event.timestamp, start) if start else None
         if event.event_type in MACRO_EVENT_TYPES:
             detail = attempts_by_event.get(event.id) or projects_by_event.get(event.id)
-            segments.append(_Segment(event.event_type, event.notes, detail))
+            segments.append(_Segment(event.event_type, event.notes, detail, time_str))
         elif event.event_type == EventType.TASK and event.notes and event.notes.lower() != TASK_DONE:
             if segments:
-                segments[-1].tasks.append(event.notes)
+                segments[-1].tasks.append((event.notes, time_str))
 
     by_type: dict[str, list[_Segment]] = {}
     for seg in segments:
