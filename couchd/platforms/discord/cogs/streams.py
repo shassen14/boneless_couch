@@ -108,7 +108,7 @@ class StreamWatcherCog(commands.Cog):
                 discord_channel = self.bot.get_channel(config.stream_updates_channel_id)
                 if discord_channel:
                     embed = discord.Embed(
-                        title=f"🔴 {self.channel} is LIVE on Twitch!",
+                        title=f"🟢 {self.channel} is LIVE on Twitch!",
                         description=f"**{title}**\nPlaying: {category}",
                         url=stream_url,
                         color=BrandColors.TWITCH,
@@ -123,7 +123,7 @@ class StreamWatcherCog(commands.Cog):
 
                     try:
                         await msg.create_thread(
-                            name=f"🔴 {self.channel} — {title}"[:100]
+                            name=f"🟢 {self.channel} — {title}"[:100]
                         )
                     except Exception as e:
                         log.warning(

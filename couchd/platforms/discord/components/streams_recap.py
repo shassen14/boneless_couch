@@ -145,6 +145,10 @@ async def post_stream_recap(stream_session: StreamSession, channel):
             live_msg = await channel.fetch_message(
                 stream_session.discord_notification_message_id
             )
+            if live_msg.embeds:
+                updated = live_msg.embeds[0].copy()
+                updated.title = (updated.title or "").replace("🟢", "🔴")
+                await live_msg.edit(embed=updated)
             if live_msg.thread:
                 target = live_msg.thread
         except Exception:
