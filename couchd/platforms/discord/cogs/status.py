@@ -125,6 +125,14 @@ class StatusWatcherCog(commands.Cog):
             except discord.NotFound:
                 log.info(f"Status message gone for guild {guild_id}, reposting")
 
+        # Bot restarted — scan recent history to find and reuse the existing status message
+        async for msg in channel.history(limit=50):
+            if msg.author == self.bot.user and msg.embeds and msg.embeds[0].title == "🤖 Bot Status":
+                self._message_ids[guild_id] = msg.id
+                await msg.edit(embed=embed)
+                log.info(f"Recovered status message for guild {guild_id} after restart")
+                return
+
         message = await channel.send(embed=embed)
         self._message_ids[guild_id] = message.id
 
