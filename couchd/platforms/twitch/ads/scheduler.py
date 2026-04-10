@@ -29,15 +29,24 @@ class AdScheduler:
     def start(self) -> None:
         asyncio.create_task(self._run_loop())
 
+    def fire_opener(self) -> None:
+        """Schedule the opening ad when stream.online is received."""
+        if self._ad_manager.has_pending():
+            return
+        log.info("Scheduling opening ad.")
+        self._ad_manager._pending_task = asyncio.create_task(
+            self._warn_then_ad(None, self._ad_manager._required_seconds)
+        )
+
     async def _run_loop(self) -> None:
         await asyncio.sleep(AdConfig.MIN_STREAM_AGE_SECONDS)
 
-        # Opening ad: establishes the 60-min cooldown timer from the start of stream.
+        # Fallback opener: fires if the bot restarted mid-stream and missed stream.online.
         session = await get_active_session()
         if session and not self._ad_manager.has_pending():
             last_ad = await self._ad_manager.get_last_ad_time(session.id)
             if last_ad is None:
-                log.info("Ad scheduler: no ad yet this session — firing opening ad.")
+                log.info("Ad scheduler: no ad yet this session (fallback opener) — scheduling now.")
                 self._ad_manager._pending_task = asyncio.create_task(
                     self._warn_then_ad(session, self._ad_manager._required_seconds)
                 )
@@ -73,7 +82,7 @@ class AdScheduler:
             except Exception:
                 log.error("Error in ad scheduler loop", exc_info=True)
 
-    async def _warn_then_ad(self, session: StreamSession, duration_seconds: int) -> None:
+    async def _warn_then_ad(self, session: StreamSession | None, duration_seconds: int) -> None:
         """Warn chat, wait, then fire the auto-ad."""
         try:
             await send_chat_message(
@@ -89,6 +98,11 @@ class AdScheduler:
                 return
             await users[0].start_commercial(length=clamped)
 
+            if session is None:
+                session = await get_active_session()
+            if session is None:
+                log.warning("_warn_then_ad: no active session to log ad event.")
+                return
             vod_ts = compute_vod_timestamp(session.start_time)
             await self._ad_manager.log_ad(session.id, clamped, vod_ts)
 

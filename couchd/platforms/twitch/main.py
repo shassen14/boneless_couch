@@ -72,21 +72,24 @@ class TwitchBot(commands.Bot):
         await self.add_component(AdCommands(self, self.ad_manager, self.youtube_client))
         await self.add_component(GeneralCommands(self, self.youtube_client))
 
-        # Subscribe to chat on startup (works after token is saved).
+        # Subscribe to chat and stream lifecycle on startup (works after token is saved).
         # On first run this will fail gracefully — auth happens via event_oauth_authorized.
         chat_sub = eventsub.ChatMessageSubscription(
             broadcaster_user_id=settings.TWITCH_OWNER_ID,
             user_id=settings.TWITCH_BOT_ID,
         )
-        try:
-            await self.subscribe_websocket(payload=chat_sub)
-            log.info("Subscribed to chat messages via WebSocket.")
-        except Exception as e:
-            log.warning(
-                "Could not subscribe to chat on startup (no saved token?): %s. "
-                "Visit http://localhost:4343/oauth to authorize.",
-                e,
-            )
+        stream_sub = eventsub.StreamOnlineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
+        for sub in (chat_sub, stream_sub):
+            try:
+                await self.subscribe_websocket(payload=sub)
+                log.info("Subscribed to %s via WebSocket.", sub.__class__.__name__)
+            except Exception as e:
+                log.warning(
+                    "Could not subscribe to %s on startup (no saved token?): %s. "
+                    "Visit http://localhost:4343/oauth to authorize.",
+                    sub.__class__.__name__,
+                    e,
+                )
 
     async def event_ready(self) -> None:
         log.info("-" * 40)
@@ -96,6 +99,12 @@ class TwitchBot(commands.Bot):
         log.info("-" * 40)
         self.ad_scheduler.start()
         asyncio.create_task(self._run_metrics_loop())
+
+    async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
+        if payload.type != "live":
+            return
+        log.info("Stream online (started_at=%s) — scheduling opener ad.", payload.started_at)
+        self.ad_scheduler.fire_opener()
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
@@ -108,11 +117,13 @@ class TwitchBot(commands.Bot):
             broadcaster_user_id=settings.TWITCH_OWNER_ID,
             user_id=settings.TWITCH_BOT_ID,
         )
-        try:
-            await self.subscribe_websocket(payload=chat_sub)
-            log.info("Subscribed to chat messages after OAuth.")
-        except Exception as e:
-            log.error("Failed to subscribe to chat after OAuth", exc_info=e)
+        stream_sub = eventsub.StreamOnlineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
+        for sub in (chat_sub, stream_sub):
+            try:
+                await self.subscribe_websocket(payload=sub)
+                log.info("Subscribed to %s after OAuth.", sub.__class__.__name__)
+            except Exception as e:
+                log.error("Failed to subscribe to %s after OAuth", sub.__class__.__name__, exc_info=e)
 
     async def event_command_error(self, payload: commands.CommandErrorPayload) -> None:
         if isinstance(payload.exception, CommandNotFound):
