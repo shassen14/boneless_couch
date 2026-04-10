@@ -7,7 +7,6 @@ from sqlalchemy import select
 
 from couchd.core.db import get_session
 from couchd.core.models import StreamEvent
-from couchd.core.constants import AdConfig
 
 log = logging.getLogger(__name__)
 
@@ -17,12 +16,19 @@ class AdBudgetManager:
 
     def __init__(self, required_minutes: int):
         self._required_seconds = required_minutes * 60
+        # Twitch's 60-min cooldown starts after the ad ends, so the effective window
+        # is 3600 + ad_duration (e.g. 3-min ad → 63-min window).
+        self._window_seconds = 3600 + self._required_seconds
         self._pending_task: asyncio.Task | None = None
+
+    @property
+    def window_seconds(self) -> int:
+        return self._window_seconds
 
     async def get_remaining(self, session_id: int, session_start: datetime) -> int:
         """
         Ad seconds accumulated since the last ad (or stream start), capped at the hourly budget.
-        Budget accrues at required/hour. 30 min after a 3-min-budget ad → 90s available.
+        Budget accrues at required/hour over the full window (3600 + ad_duration seconds).
         """
         last_ad = await self.get_last_ad_time(session_id)
         reference = last_ad if last_ad else session_start
@@ -30,9 +36,9 @@ class AdBudgetManager:
             reference = reference.replace(tzinfo=timezone.utc)
         elapsed = min(
             (datetime.now(timezone.utc) - reference).total_seconds(),
-            AdConfig.WINDOW_SECONDS,
+            self._window_seconds,
         )
-        return int(elapsed * self._required_seconds / AdConfig.WINDOW_SECONDS)
+        return int(elapsed * self._required_seconds / self._window_seconds)
 
     async def get_last_ad_time(self, session_id: int) -> datetime | None:
         """Timestamp of the most recent ad event for this session, or None."""

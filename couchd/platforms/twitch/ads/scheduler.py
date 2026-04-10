@@ -32,6 +32,16 @@ class AdScheduler:
     async def _run_loop(self) -> None:
         await asyncio.sleep(AdConfig.MIN_STREAM_AGE_SECONDS)
 
+        # Opening ad: establishes the 60-min cooldown timer from the start of stream.
+        session = await get_active_session()
+        if session and not self._ad_manager.has_pending():
+            last_ad = await self._ad_manager.get_last_ad_time(session.id)
+            if last_ad is None:
+                log.info("Ad scheduler: no ad yet this session — firing opening ad.")
+                self._ad_manager._pending_task = asyncio.create_task(
+                    self._warn_then_ad(session, self._ad_manager._required_seconds)
+                )
+
         while True:
             await asyncio.sleep(60)
             try:
@@ -44,9 +54,10 @@ class AdScheduler:
                     continue
 
                 # Fire when enough time has passed that the full budget has nearly accumulated.
-                # Derived from: elapsed >= WINDOW_SECONDS - remaining, with remaining = elapsed * rate.
+                # Window is 3600 + req (Twitch 60-min cooldown starts after ad ends).
                 req = self._ad_manager._required_seconds
-                fire_threshold = req * AdConfig.WINDOW_SECONDS / (AdConfig.WINDOW_SECONDS + req)
+                window = self._ad_manager.window_seconds
+                fire_threshold = req * window / (window + req)
                 if remaining < fire_threshold:
                     continue
 
