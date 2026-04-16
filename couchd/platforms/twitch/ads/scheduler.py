@@ -92,6 +92,10 @@ class AdScheduler:
                 )
                 await asyncio.sleep(AdConfig.WARNING_SECONDS)
 
+            if await get_active_session() is None:
+                log.info("_warn_then_ad: stream went offline before ad could fire — skipping.")
+                return
+
             clamped = clamp_to_ad_duration(duration_seconds)
             users = await self._bot.fetch_users(logins=[settings.TWITCH_CHANNEL])
             if not users:
