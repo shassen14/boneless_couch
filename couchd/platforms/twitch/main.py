@@ -101,6 +101,31 @@ class TwitchBot(commands.Bot):
         log.info("-" * 40)
         self.ad_scheduler.start()
         asyncio.create_task(self._run_metrics_loop())
+        asyncio.create_task(self._check_live_on_ready())
+
+    async def _check_live_on_ready(self) -> None:
+        """On startup, notify Discord if stream is already live (handles mid-stream restarts)."""
+        try:
+            existing = await get_active_session()
+            if existing:
+                log.info("Active StreamSession found in DB — skipping startup live-check.")
+                return
+
+            stream_data = await self.twitch_client.get_stream_status(settings.TWITCH_CHANNEL)
+            if not stream_data:
+                log.info("Startup live-check: %s is offline.", settings.TWITCH_CHANNEL)
+                return
+
+            log.info("Startup live-check: stream already live — firing stream_online notify.")
+            notify_payload = json.dumps({
+                "title": stream_data.get("title", ""),
+                "category": stream_data.get("game_name", ""),
+                "thumbnail_url": stream_data.get("thumbnail_url", ""),
+            })
+            async with get_session() as db:
+                await db.execute(text("SELECT pg_notify('stream_online', :p)"), {"p": notify_payload})
+        except Exception:
+            log.error("Error in startup live-check", exc_info=True)
 
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         if payload.type != "live":
