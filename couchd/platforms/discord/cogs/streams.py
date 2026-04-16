@@ -13,6 +13,7 @@ from couchd.core.db import get_session, get_listener_connection
 from couchd.core.models import StreamSession, GuildConfig
 from couchd.core.constants import Platform, StreamDefaults, TwitchConfig, BrandColors
 from couchd.core.utils import get_active_session
+from couchd.core.clients.twitch import TwitchClient
 from sqlalchemy import select
 from couchd.platforms.discord.components.streams_recap import post_stream_recap
 
@@ -26,13 +27,10 @@ class StreamWatcherCog(commands.Cog):
         self._listener_conn: asyncpg.Connection | None = None
 
     async def cog_load(self):
-        session = await get_active_session()
-        if session:
-            log.info("Bot restarted mid-stream — resuming stream tracking (session id=%d).", session.id)
-
         await self._connect_listener()
         self._keepalive_task = asyncio.create_task(self._keepalive_listener())
         log.info("Listening for stream events via PostgreSQL NOTIFY.")
+        asyncio.create_task(self._startup_live_check())
 
     def cog_unload(self):
         if hasattr(self, "_keepalive_task"):
@@ -60,18 +58,47 @@ class StreamWatcherCog(commands.Cog):
                 log.info("Listener connection re-established.")
 
     def _on_stream_online(self, _conn, _pid, _channel, payload):
-        self.bot.loop.create_task(self._handle_stream_online(payload))
+        log.info("Received stream_online pg_notify.")
+        asyncio.get_event_loop().create_task(self._handle_stream_online(payload))
 
     def _on_stream_offline(self, _conn, _pid, _channel, _payload):
-        self.bot.loop.create_task(self._handle_stream_offline())
+        log.info("Received stream_offline pg_notify.")
+        asyncio.get_event_loop().create_task(self._handle_stream_offline())
 
     async def _handle_stream_online(self, payload: str):
-        await self.bot.wait_until_ready()
-        await self.handle_stream_start(json.loads(payload))
+        try:
+            await self.bot.wait_until_ready()
+            await self.handle_stream_start(json.loads(payload))
+        except Exception:
+            log.error("Error handling stream_online notification", exc_info=True)
 
     async def _handle_stream_offline(self):
+        try:
+            await self.bot.wait_until_ready()
+            await self.handle_stream_end()
+        except Exception:
+            log.error("Error handling stream_offline notification", exc_info=True)
+
+    async def _startup_live_check(self):
+        """Independent startup check — detects live stream without relying on pg_notify."""
         await self.bot.wait_until_ready()
-        await self.handle_stream_end()
+        try:
+            existing = await get_active_session()
+            if existing:
+                log.info("Startup check: active session id=%d found in DB.", existing.id)
+                return
+            stream_data = await TwitchClient().get_stream_status(settings.TWITCH_CHANNEL)
+            if not stream_data:
+                log.info("Startup check: %s is offline.", settings.TWITCH_CHANNEL)
+                return
+            log.info("Startup check: stream is live, creating session directly.")
+            await self.handle_stream_start({
+                "title": stream_data.get("title", ""),
+                "category": stream_data.get("game_name", ""),
+                "thumbnail_url": stream_data.get("thumbnail_url", ""),
+            })
+        except Exception:
+            log.error("Error in startup live check", exc_info=True)
 
     async def handle_stream_start(self, data: dict):
         title = data.get("title") or StreamDefaults.TITLE.value
