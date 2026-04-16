@@ -25,18 +25,25 @@ class StreamWatcherCog(commands.Cog):
         self.bot = bot
         self.channel = settings.TWITCH_CHANNEL
         self._listener_conn: asyncpg.Connection | None = None
+        self._keepalive_task: asyncio.Task | None = None
 
-    async def cog_load(self):
-        await self._connect_listener()
-        self._keepalive_task = asyncio.create_task(self._keepalive_listener())
-        log.info("Listening for stream events via PostgreSQL NOTIFY.")
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if self._listener_conn is not None:
+            return  # already initialized on a previous on_ready
+        try:
+            await self._connect_listener()
+            self._keepalive_task = asyncio.create_task(self._keepalive_listener())
+            log.info("Listening for stream events via PostgreSQL NOTIFY.")
+        except Exception:
+            log.error("Failed to set up PostgreSQL listener", exc_info=True)
         asyncio.create_task(self._startup_live_check())
 
     def cog_unload(self):
-        if hasattr(self, "_keepalive_task"):
+        if self._keepalive_task:
             self._keepalive_task.cancel()
         if self._listener_conn:
-            self.bot.loop.create_task(self._listener_conn.close())
+            asyncio.get_event_loop().create_task(self._listener_conn.close())
 
     async def _connect_listener(self):
         self._listener_conn = await get_listener_connection()
