@@ -70,17 +70,7 @@ class AdCommands(commands.Component):
 
         ends_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds)
         return_time = ends_at.astimezone().strftime("%-I:%M %p")
-        end_time = ends_at.strftime("%-I:%M:%S %p UTC")
-
-        whole_minutes, leftover_seconds = divmod(duration_seconds, 60)
-        duration_label = (
-            f"{whole_minutes}m {leftover_seconds}s"
-            if leftover_seconds
-            else f"{whole_minutes}m"
-        )
-        await ctx.reply(
-            f"🎬 Running {duration_label} ad — ends ~{end_time}. Time to stretch!"
-        )
+        await ctx.reply(f"🎬 Ad break — back at {return_time}!")
         log.info("Triggered %ds ad break.", duration_seconds)
 
         latest_video = (
@@ -88,7 +78,7 @@ class AdCommands(commands.Component):
             if self.youtube_client
             else None
         )
-        ad_msg = pick_ad_message(latest_video, return_time)
+        ad_msg = pick_ad_message(latest_video)
         if ad_msg:
             await send_chat_message(self.bot, ad_msg)
 

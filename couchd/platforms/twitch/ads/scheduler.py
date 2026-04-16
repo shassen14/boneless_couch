@@ -35,7 +35,7 @@ class AdScheduler:
             return
         log.info("Scheduling opening ad.")
         self._ad_manager._pending_task = asyncio.create_task(
-            self._warn_then_ad(None, self._ad_manager._required_seconds)
+            self._warn_then_ad(None, self._ad_manager._required_seconds, warn=False)
         )
 
     async def _run_loop(self) -> None:
@@ -82,14 +82,15 @@ class AdScheduler:
             except Exception:
                 log.error("Error in ad scheduler loop", exc_info=True)
 
-    async def _warn_then_ad(self, session: StreamSession | None, duration_seconds: int) -> None:
-        """Warn chat, wait, then fire the auto-ad."""
+    async def _warn_then_ad(self, session: StreamSession | None, duration_seconds: int, *, warn: bool = True) -> None:
+        """Optionally warn chat, then fire the ad and send the standard 3-message sequence."""
         try:
-            await send_chat_message(
-                self._bot,
-                f"⏰ Ad break in {AdConfig.WARNING_SECONDS}s — time to stretch!",
-            )
-            await asyncio.sleep(AdConfig.WARNING_SECONDS)
+            if warn:
+                await send_chat_message(
+                    self._bot,
+                    f"⏰ Ad break in {AdConfig.WARNING_SECONDS}s — time to stretch!",
+                )
+                await asyncio.sleep(AdConfig.WARNING_SECONDS)
 
             clamped = clamp_to_ad_duration(duration_seconds)
             users = await self._bot.fetch_users(logins=[settings.TWITCH_CHANNEL])
@@ -105,17 +106,14 @@ class AdScheduler:
                 return
             vod_ts = compute_vod_timestamp(session.start_time)
             await self._ad_manager.log_ad(session.id, clamped, vod_ts)
+            log.info("Auto-ad complete: %ds at %s.", clamped, vod_ts)
 
             ends_at = datetime.now(timezone.utc) + timedelta(seconds=clamped)
             return_time = ends_at.astimezone().strftime("%-I:%M %p")
-            end_time = ends_at.strftime("%-I:%M:%S %p UTC")
-            whole_minutes, leftover_seconds = divmod(clamped, 60)
-            duration_label = f"{whole_minutes}m {leftover_seconds}s" if leftover_seconds else f"{whole_minutes}m"
-            await send_chat_message(self._bot, f"🎬 {duration_label} ad — ends ~{end_time}. Time to stretch!")
-            log.info("Auto-ad complete: %ds at %s.", clamped, vod_ts)
+            await send_chat_message(self._bot, f"🎬 Ad break — back at {return_time}!")
 
             latest_video = await self._youtube_client.get_latest_video() if self._youtube_client else None
-            ad_msg = pick_ad_message(latest_video, return_time)
+            ad_msg = pick_ad_message(latest_video)
             if ad_msg:
                 await send_chat_message(self._bot, ad_msg)
 

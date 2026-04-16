@@ -12,13 +12,12 @@ _STATIC_POOL = [
 ]
 
 
-def pick_ad_message(latest_video: dict | None = None, return_time: str | None = None) -> str | None:
+def pick_ad_message(latest_video: dict | None = None) -> str | None:
     """
-    Returns a chat message to post after an ad break, or None to stay silent.
+    Returns a promo message to post during an ad break, or None to stay silent.
 
     latest_video: dict with 'title' and 'video_url' keys from YouTubeRSSClient,
                   or None if YouTube is not configured.
-    return_time: local-time string like "7:03" shown to viewers as the back-time.
     """
     if random.random() > _SEND_CHANCE:
         return None
@@ -30,10 +29,7 @@ def pick_ad_message(latest_video: dict | None = None, return_time: str | None = 
             f"{latest_video['title']} → {latest_video['video_url']}"
         )
 
-    msg = random.choice(pool)
-    if return_time:
-        msg += f" Back at {return_time}!"
-    return msg
+    return random.choice(pool)
 
 
 _RETURN_POOL = [

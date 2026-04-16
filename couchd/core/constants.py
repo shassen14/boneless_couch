@@ -55,8 +55,8 @@ class TwitchAdDuration(int, Enum):
 class AdConfig:
     # WINDOW_SECONDS is computed per-instance in AdBudgetManager as 3600 + required_seconds,
     # because Twitch's cooldown is 60 min starting AFTER the ad ends (e.g. 3-min ad = 63-min window).
-    WARNING_SECONDS = 60  # warn N seconds before auto-ad fires
-    MIN_STREAM_AGE_SECONDS = 5 * 60  # delay before firing opening ad
+    WARNING_SECONDS = 60  # warn N seconds before mid-stream auto-ad fires
+    MIN_STREAM_AGE_SECONDS = 5 * 60  # delay before fallback opener check
 
 
 class LeetCodeConfig:
