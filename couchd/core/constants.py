@@ -57,6 +57,7 @@ class AdConfig:
     # because Twitch's cooldown is 60 min starting AFTER the ad ends (e.g. 3-min ad = 63-min window).
     WARNING_SECONDS = 60  # warn N seconds before mid-stream auto-ad fires
     MIN_STREAM_AGE_SECONDS = 5 * 60  # delay before fallback opener check
+    OPENER_DELAY_SECONDS = 30  # wait for StreamSession to be created before opener ad fires
 
 
 class LeetCodeConfig:

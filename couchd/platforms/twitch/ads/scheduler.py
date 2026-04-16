@@ -35,7 +35,12 @@ class AdScheduler:
             return
         log.info("Scheduling opening ad.")
         self._ad_manager._pending_task = asyncio.create_task(
-            self._warn_then_ad(None, self._ad_manager._required_seconds, warn=False)
+            self._warn_then_ad(
+                None,
+                self._ad_manager._required_seconds,
+                warn=False,
+                initial_delay=AdConfig.OPENER_DELAY_SECONDS,
+            )
         )
 
     async def _run_loop(self) -> None:
@@ -82,9 +87,12 @@ class AdScheduler:
             except Exception:
                 log.error("Error in ad scheduler loop", exc_info=True)
 
-    async def _warn_then_ad(self, session: StreamSession | None, duration_seconds: int, *, warn: bool = True) -> None:
+    async def _warn_then_ad(self, session: StreamSession | None, duration_seconds: int, *, warn: bool = True, initial_delay: int = 0) -> None:
         """Optionally warn chat, then fire the ad and send the standard 3-message sequence."""
         try:
+            if initial_delay:
+                await asyncio.sleep(initial_delay)
+
             if warn:
                 await send_chat_message(
                     self._bot,
