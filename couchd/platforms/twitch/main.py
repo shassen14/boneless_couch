@@ -1,11 +1,12 @@
 # couchd/platforms/twitch/main.py
 import asyncio
+import json
 import logging
 import twitchio
 from twitchio import eventsub
 from twitchio.ext import commands
 from twitchio.ext.commands.exceptions import CommandNotFound
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 import sentry_sdk
 from couchd.core.config import settings
@@ -78,8 +79,9 @@ class TwitchBot(commands.Bot):
             broadcaster_user_id=settings.TWITCH_OWNER_ID,
             user_id=settings.TWITCH_BOT_ID,
         )
-        stream_sub = eventsub.StreamOnlineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
-        for sub in (chat_sub, stream_sub):
+        stream_online_sub = eventsub.StreamOnlineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
+        stream_offline_sub = eventsub.StreamOfflineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
+        for sub in (chat_sub, stream_online_sub, stream_offline_sub):
             try:
                 await self.subscribe_websocket(payload=sub)
                 log.info("Subscribed to %s via WebSocket.", sub.__class__.__name__)
@@ -106,6 +108,22 @@ class TwitchBot(commands.Bot):
         log.info("Stream online (started_at=%s) — scheduling opener ad.", payload.started_at)
         self.ad_scheduler.fire_opener()
 
+        stream_data = await self.twitch_client.get_stream_status(settings.TWITCH_CHANNEL)
+        notify_payload = json.dumps({
+            "title": stream_data.get("title", "") if stream_data else "",
+            "category": stream_data.get("game_name", "") if stream_data else "",
+            "thumbnail_url": stream_data.get("thumbnail_url", "") if stream_data else "",
+        })
+        async with get_session() as db:
+            await db.execute(text("SELECT pg_notify('stream_online', :p)"), {"p": notify_payload})
+        log.info("Notified stream_online.")
+
+    async def event_stream_offline(self, _payload: twitchio.StreamOffline) -> None:
+        log.info("Stream offline — notifying Discord bot.")
+        async with get_session() as db:
+            await db.execute(text("SELECT pg_notify('stream_offline', '{}')"))
+        log.info("Notified stream_offline.")
+
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
     ) -> None:
@@ -117,8 +135,9 @@ class TwitchBot(commands.Bot):
             broadcaster_user_id=settings.TWITCH_OWNER_ID,
             user_id=settings.TWITCH_BOT_ID,
         )
-        stream_sub = eventsub.StreamOnlineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
-        for sub in (chat_sub, stream_sub):
+        stream_online_sub = eventsub.StreamOnlineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
+        stream_offline_sub = eventsub.StreamOfflineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
+        for sub in (chat_sub, stream_online_sub, stream_offline_sub):
             try:
                 await self.subscribe_websocket(payload=sub)
                 log.info("Subscribed to %s after OAuth.", sub.__class__.__name__)

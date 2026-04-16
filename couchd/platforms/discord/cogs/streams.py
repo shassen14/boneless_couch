@@ -1,13 +1,14 @@
 # couchd/platforms/discord/cogs/streams.py
+import json
+import asyncpg
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import logging
 import random
 from datetime import datetime, timezone
 
 from couchd.core.config import settings
-from couchd.core.clients.twitch import TwitchClient
-from couchd.core.db import get_session
+from couchd.core.db import get_session, get_listener_connection
 from couchd.core.models import StreamSession, GuildConfig
 from couchd.core.constants import Platform, StreamDefaults, TwitchConfig, BrandColors
 from couchd.core.utils import get_active_session
@@ -20,79 +21,68 @@ log = logging.getLogger(__name__)
 class StreamWatcherCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.twitch = TwitchClient()
         self.channel = settings.TWITCH_CHANNEL
-
-        self.was_live_last_check = False
-        self.check_twitch_status.start()
+        self._listener_conn: asyncpg.Connection | None = None
 
     async def cog_load(self):
         session = await get_active_session()
         if session:
-            self.was_live_last_check = True
             log.info("Bot restarted mid-stream — resuming stream tracking (session id=%d).", session.id)
 
+        self._listener_conn = await get_listener_connection()
+        await self._listener_conn.add_listener("stream_online", self._on_stream_online)
+        await self._listener_conn.add_listener("stream_offline", self._on_stream_offline)
+        log.info("Listening for stream events via PostgreSQL NOTIFY.")
+
     def cog_unload(self):
-        self.check_twitch_status.cancel()
+        if self._listener_conn:
+            self.bot.loop.create_task(self._listener_conn.close())
 
-    @tasks.loop(minutes=settings.TWITCH_POLL_RATE_MINUTES)
-    async def check_twitch_status(self):
+    def _on_stream_online(self, _conn, _pid, _channel, payload):
+        self.bot.loop.create_task(self._handle_stream_online(payload))
+
+    def _on_stream_offline(self, _conn, _pid, _channel, _payload):
+        self.bot.loop.create_task(self._handle_stream_offline())
+
+    async def _handle_stream_online(self, payload: str):
         await self.bot.wait_until_ready()
+        await self.handle_stream_start(json.loads(payload))
 
-        log.debug(f"Checking {Platform.TWITCH.value} status for {self.channel}...")
-        stream_data = await self.twitch.get_stream_status(self.channel)
+    async def _handle_stream_offline(self):
+        await self.bot.wait_until_ready()
+        await self.handle_stream_end()
 
-        is_live_now = stream_data is not None
-
-        if is_live_now and not self.was_live_last_check:
-            log.info(f"{self.channel} went LIVE.")
-            self.was_live_last_check = True
-            await self.handle_stream_start(stream_data)
-
-        elif not is_live_now and self.was_live_last_check:
-            log.info(f"{self.channel} went OFFLINE.")
-            self.was_live_last_check = False
-            await self.handle_stream_end()
-
-    async def handle_stream_start(self, stream_data: dict):
-        title = stream_data.get("title", StreamDefaults.TITLE.value)
-        category = stream_data.get("game_name", StreamDefaults.CATEGORY.value)
-
+    async def handle_stream_start(self, data: dict):
+        title = data.get("title") or StreamDefaults.TITLE.value
+        category = data.get("category") or StreamDefaults.CATEGORY.value
         stream_url = f"{TwitchConfig.BASE_URL}{self.channel}"
 
-        raw_thumbnail = stream_data.get("thumbnail_url", "")
+        raw_thumbnail = data.get("thumbnail_url", "")
         thumbnail_url = raw_thumbnail.replace(
             TwitchConfig.THUMBNAIL_PLACEHOLDER_W, TwitchConfig.THUMBNAIL_WIDTH
         ).replace(TwitchConfig.THUMBNAIL_PLACEHOLDER_H, TwitchConfig.THUMBNAIL_HEIGHT)
 
-        # Guard against bot restart mid-stream
+        # Guard against duplicate (bot restart mid-stream or duplicate notify)
         try:
             async with get_session() as session:
                 existing = (
-                    (
-                        await session.execute(
-                            select(StreamSession)
-                            .where(
-                                (StreamSession.is_active == True)
-                                & (StreamSession.platform == Platform.TWITCH.value)
-                            )
-                            .order_by(StreamSession.start_time.desc())
+                    await session.execute(
+                        select(StreamSession)
+                        .where(
+                            (StreamSession.is_active == True)
+                            & (StreamSession.platform == Platform.TWITCH.value)
                         )
+                        .order_by(StreamSession.start_time.desc())
                     )
-                    .scalars()
-                    .first()
-                )
+                ).scalars().first()
                 if existing is not None:
-                    log.info(
-                        "Active StreamSession already exists; skipping creation (bot restart mid-stream)."
-                    )
+                    log.info("Active StreamSession already exists; skipping creation.")
                     return
         except Exception as e:
             log.error("Failed to check existing StreamSession", exc_info=e)
             return
 
-        # Post go-live embed; capture message_id before thread creation so an error
-        # there doesn't lose the reference needed to attach the recap later.
+        # Post go-live embed
         message_id = None
         try:
             async with get_session() as session:
@@ -114,35 +104,28 @@ class StreamWatcherCog(commands.Cog):
                         color=BrandColors.TWITCH,
                     )
                     if thumbnail_url:
-                        embed.set_image(
-                            url=f"{thumbnail_url}?r={random.randint(1, 99999)}"
-                        )
+                        embed.set_image(url=f"{thumbnail_url}?r={random.randint(1, 99999)}")
 
                     msg = await discord_channel.send(embed=embed)
-                    message_id = msg.id  # captured before thread creation
+                    message_id = msg.id
 
                     try:
-                        await msg.create_thread(
-                            name=f"🟢 {self.channel} — {title}"[:100]
-                        )
+                        await msg.create_thread(name=f"🟢 {self.channel} — {title}"[:100])
                     except Exception as e:
-                        log.warning(
-                            "Failed to create thread for go-live message", exc_info=e
-                        )
+                        log.warning("Failed to create thread for go-live message", exc_info=e)
 
-                    log.info(f"Sent go-live announcement to #{discord_channel.name}")
+                    log.info("Sent go-live announcement to #%s", discord_channel.name)
                 else:
                     log.warning(
-                        f"Configured stream updates channel ({config.stream_updates_channel_id}) is invisible to the bot."
+                        "Configured stream updates channel (%d) is invisible to the bot.",
+                        config.stream_updates_channel_id,
                     )
             else:
-                log.warning(
-                    "No server has configured a stream_updates_channel_id. Skipping announcement."
-                )
+                log.warning("No server has configured a stream_updates_channel_id. Skipping announcement.")
         except Exception as e:
             log.error("Failed to send Discord announcement", exc_info=e)
 
-        # Save session; Discord post happens first so message_id is available in one insert.
+        # Save session
         try:
             async with get_session() as session:
                 session.add(
@@ -154,14 +137,13 @@ class StreamWatcherCog(commands.Cog):
                         discord_notification_message_id=message_id,
                     )
                 )
-            log.info(f"Created StreamSession in DB (message_id={message_id}).")
+            log.info("Created StreamSession in DB (message_id=%s).", message_id)
         except Exception as e:
             log.error("Failed to create StreamSession in DB", exc_info=e)
 
     async def handle_stream_end(self):
         stream_session = None
 
-        # Mark session inactive, set end_time
         try:
             async with get_session() as session:
                 result = await session.execute(
@@ -192,7 +174,6 @@ class StreamWatcherCog(commands.Cog):
             log.error("Failed to close StreamSession in DB", exc_info=e)
             return
 
-        # Find Discord channel
         try:
             async with get_session() as session:
                 config = (
@@ -204,9 +185,7 @@ class StreamWatcherCog(commands.Cog):
                 ).scalar_one_or_none()
 
             if not config or not config.stream_updates_channel_id:
-                log.warning(
-                    "No stream_updates_channel_id configured. Skipping stream summary."
-                )
+                log.warning("No stream_updates_channel_id configured. Skipping stream summary.")
                 return
 
             discord_channel = self.bot.get_channel(config.stream_updates_channel_id)

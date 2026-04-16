@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
+import asyncpg
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
@@ -36,6 +37,17 @@ except Exception as e:
 
 class Base(DeclarativeBase):
     pass
+
+
+async def get_listener_connection() -> asyncpg.Connection:
+    """Raw asyncpg connection for LISTEN/NOTIFY. Caller owns the lifecycle."""
+    return await asyncpg.connect(
+        host=settings.DB_HOST,
+        port=settings.DB_PORT,
+        user=settings.DB_USER,
+        password=settings.DB_PASSWORD,
+        database=settings.DB_NAME,
+    )
 
 
 # 3. The Async Context Manager (Adapted from your design)
