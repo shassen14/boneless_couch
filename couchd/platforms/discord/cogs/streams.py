@@ -89,6 +89,7 @@ class StreamWatcherCog(commands.Cog):
     async def _startup_live_check(self):
         """Independent startup check — detects live stream without relying on pg_notify."""
         await self.bot.wait_until_ready()
+        await asyncio.sleep(10)  # let pg_notify path arrive and commit first
         try:
             existing = await get_active_session()
             if existing:

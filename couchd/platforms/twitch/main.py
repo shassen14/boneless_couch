@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 import twitchio
 from twitchio import eventsub
 from twitchio.ext import commands
@@ -144,8 +145,19 @@ class TwitchBot(commands.Bot):
         log.info("Notified stream_online.")
 
     async def event_stream_offline(self, _payload: twitchio.StreamOffline) -> None:
-        log.info("Stream offline — notifying Discord bot.")
+        log.info("Stream offline — closing session and notifying Discord bot.")
         async with get_session() as db:
+            result = await db.execute(
+                select(StreamSession).where(
+                    (StreamSession.is_active == True)
+                    & (StreamSession.platform == "twitch")
+                ).order_by(StreamSession.start_time.desc())
+            )
+            session = result.scalars().first()
+            if session:
+                session.is_active = False
+                session.end_time = datetime.now(timezone.utc)
+                log.info("Marked StreamSession id=%d as inactive.", session.id)
             await db.execute(text("SELECT pg_notify('stream_offline', '{}')"))
         log.info("Notified stream_offline.")
 
