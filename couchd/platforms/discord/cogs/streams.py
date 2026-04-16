@@ -1,4 +1,5 @@
 # couchd/platforms/discord/cogs/streams.py
+import asyncio
 import json
 import asyncpg
 import discord
@@ -29,14 +30,34 @@ class StreamWatcherCog(commands.Cog):
         if session:
             log.info("Bot restarted mid-stream — resuming stream tracking (session id=%d).", session.id)
 
-        self._listener_conn = await get_listener_connection()
-        await self._listener_conn.add_listener("stream_online", self._on_stream_online)
-        await self._listener_conn.add_listener("stream_offline", self._on_stream_offline)
+        await self._connect_listener()
+        self._keepalive_task = asyncio.create_task(self._keepalive_listener())
         log.info("Listening for stream events via PostgreSQL NOTIFY.")
 
     def cog_unload(self):
+        if hasattr(self, "_keepalive_task"):
+            self._keepalive_task.cancel()
         if self._listener_conn:
             self.bot.loop.create_task(self._listener_conn.close())
+
+    async def _connect_listener(self):
+        self._listener_conn = await get_listener_connection()
+        await self._listener_conn.add_listener("stream_online", self._on_stream_online)
+        await self._listener_conn.add_listener("stream_offline", self._on_stream_offline)
+
+    async def _keepalive_listener(self):
+        while True:
+            await asyncio.sleep(60)
+            try:
+                await self._listener_conn.fetchval("SELECT 1")
+            except Exception:
+                log.warning("Listener connection lost — reconnecting.")
+                try:
+                    await self._listener_conn.close()
+                except Exception:
+                    pass
+                await self._connect_listener()
+                log.info("Listener connection re-established.")
 
     def _on_stream_online(self, _conn, _pid, _channel, payload):
         self.bot.loop.create_task(self._handle_stream_online(payload))
