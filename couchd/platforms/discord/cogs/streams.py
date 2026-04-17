@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 import logging
 import random
-from datetime import datetime, timezone
+
 
 from couchd.core.config import settings
 from couchd.core.db import get_session, get_listener_connection
@@ -68,9 +68,9 @@ class StreamWatcherCog(commands.Cog):
         log.info("Received stream_online pg_notify.")
         asyncio.get_event_loop().create_task(self._handle_stream_online(payload))
 
-    def _on_stream_offline(self, _conn, _pid, _channel, _payload):
+    def _on_stream_offline(self, _conn, _pid, _channel, payload):
         log.info("Received stream_offline pg_notify.")
-        asyncio.get_event_loop().create_task(self._handle_stream_offline())
+        asyncio.get_event_loop().create_task(self._handle_stream_offline(payload))
 
     async def _handle_stream_online(self, payload: str):
         try:
@@ -79,10 +79,11 @@ class StreamWatcherCog(commands.Cog):
         except Exception:
             log.error("Error handling stream_online notification", exc_info=True)
 
-    async def _handle_stream_offline(self):
+    async def _handle_stream_offline(self, payload: str):
         try:
             await self.bot.wait_until_ready()
-            await self.handle_stream_end()
+            data = json.loads(payload) if payload else {}
+            await self.handle_stream_end(data.get("session_id"))
         except Exception:
             log.error("Error handling stream_offline notification", exc_info=True)
 
@@ -197,37 +198,28 @@ class StreamWatcherCog(commands.Cog):
         except Exception as e:
             log.error("Failed to create StreamSession in DB", exc_info=e)
 
-    async def handle_stream_end(self):
+    async def handle_stream_end(self, session_id: int | None = None):
         stream_session = None
 
         try:
             async with get_session() as session:
-                result = await session.execute(
-                    select(StreamSession)
-                    .where(
-                        (StreamSession.is_active == True)
-                        & (StreamSession.platform == Platform.TWITCH.value)
+                if session_id is not None:
+                    result = await session.execute(
+                        select(StreamSession).where(StreamSession.id == session_id)
                     )
-                    .order_by(StreamSession.start_time.desc())
-                )
+                else:
+                    result = await session.execute(
+                        select(StreamSession)
+                        .where(StreamSession.platform == Platform.TWITCH.value)
+                        .order_by(StreamSession.start_time.desc())
+                    )
                 stream_session = result.scalars().first()
 
                 if stream_session is None:
-                    log.warning(
-                        "handle_stream_end: no active %s session found in DB.",
-                        Platform.TWITCH.value,
-                    )
+                    log.warning("handle_stream_end: session not found (id=%s).", session_id)
                     return
-
-                stream_session.is_active = False
-                stream_session.end_time = datetime.now(timezone.utc)
-                log.info(
-                    "Marked active %s StreamSession (id=%d) as offline.",
-                    Platform.TWITCH.value,
-                    stream_session.id,
-                )
         except Exception as e:
-            log.error("Failed to close StreamSession in DB", exc_info=e)
+            log.error("Failed to fetch StreamSession for recap", exc_info=e)
             return
 
         try:

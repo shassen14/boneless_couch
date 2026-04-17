@@ -29,6 +29,7 @@ class HealthCheck:
 class StatusWatcherCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._twitch = TwitchClient()
         self._message_ids: dict[int, int] = {}  # guild_id -> message_id
         self._checks: list[HealthCheck] = [
             HealthCheck("Database", self._check_database),
@@ -69,7 +70,7 @@ class StatusWatcherCog(commands.Cog):
 
     async def _check_twitch(self) -> tuple[bool, str]:
         try:
-            await TwitchClient().get_stream_status(settings.TWITCH_CHANNEL)
+            await self._twitch.get_stream_status(settings.TWITCH_CHANNEL)
             return True, "Connected"
         except Exception as e:
             return False, str(e)

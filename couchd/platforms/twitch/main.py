@@ -158,7 +158,10 @@ class TwitchBot(commands.Bot):
                 session.is_active = False
                 session.end_time = datetime.now(timezone.utc)
                 log.info("Marked StreamSession id=%d as inactive.", session.id)
-            await db.execute(text("SELECT pg_notify('stream_offline', '{}')"))
+            await db.execute(
+                text("SELECT pg_notify('stream_offline', :p)"),
+                {"p": json.dumps({"session_id": session.id if session else None})},
+            )
         log.info("Notified stream_offline.")
 
     async def event_oauth_authorized(
