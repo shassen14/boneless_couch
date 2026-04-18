@@ -144,8 +144,7 @@ class TwitchBot(commands.Bot):
             await db.execute(text("SELECT pg_notify('stream_online', :p)"), {"p": notify_payload})
         log.info("Notified stream_online.")
 
-    async def event_stream_offline(self, _payload: twitchio.StreamOffline) -> None:
-        log.info("Stream offline — closing session and notifying Discord bot.")
+    async def _trigger_offline(self) -> None:
         async with get_session() as db:
             result = await db.execute(
                 select(StreamSession).where(
@@ -154,15 +153,20 @@ class TwitchBot(commands.Bot):
                 ).order_by(StreamSession.start_time.desc())
             )
             session = result.scalars().first()
-            if session:
-                session.is_active = False
-                session.end_time = datetime.now(timezone.utc)
-                log.info("Marked StreamSession id=%d as inactive.", session.id)
+            if not session:
+                return
+            session.is_active = False
+            session.end_time = datetime.now(timezone.utc)
+            log.info("Marked StreamSession id=%d as inactive.", session.id)
             await db.execute(
                 text("SELECT pg_notify('stream_offline', :p)"),
-                {"p": json.dumps({"session_id": session.id if session else None})},
+                {"p": json.dumps({"session_id": session.id})},
             )
         log.info("Notified stream_offline.")
+
+    async def event_stream_offline(self, _payload: twitchio.StreamOffline) -> None:
+        log.info("Stream offline — closing session and notifying Discord bot.")
+        await self._trigger_offline()
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
@@ -200,6 +204,9 @@ class TwitchBot(commands.Bot):
                     settings.TWITCH_CHANNEL
                 )
                 if not stream_data:
+                    if await get_active_session():
+                        log.info("Metrics poll: stream offline with active session — triggering offline fallback.")
+                        await self._trigger_offline()
                     continue
 
                 viewer_count = stream_data.get("viewer_count", 0)
