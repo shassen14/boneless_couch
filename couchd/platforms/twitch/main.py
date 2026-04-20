@@ -14,7 +14,8 @@ from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession
-from couchd.core.constants import ChatMetrics
+from couchd.core.constants import ChatMetrics, HoldSource
+from couchd.core.moderation import ModerationEngine
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
@@ -62,6 +63,7 @@ class TwitchBot(commands.Bot):
                 moderator_manage_announcements=True,
                 moderator_manage_chat_settings=True,
                 moderator_manage_shoutouts=True,
+                moderator_manage_automod=True,
                 # Stream management
                 channel_manage_broadcast=True,
                 channel_manage_raids=True,
@@ -91,11 +93,12 @@ class TwitchBot(commands.Bot):
         self.twitch_client = TwitchClient()
         self.youtube_client = YouTubeRSSClient() if settings.YOUTUBE_CHANNEL_ID else None
         self.ad_scheduler = AdScheduler(self, self.ad_manager, self.youtube_client)
+        self.mod_engine = ModerationEngine(settings.MODERATION_PATTERNS)
 
     async def setup_hook(self) -> None:
         await self.lc_client.load_ratings()
 
-        await self.add_component(LCCommands(self.lc_client, self.metrics_tracker))
+        await self.add_component(LCCommands(self.lc_client, self.metrics_tracker, self.mod_engine))
         await self.add_component(ProjectCommands(self.github_client))
         await self.add_component(ActivityCommands())
         await self.add_component(AdCommands(self, self.ad_manager, self.youtube_client))
@@ -128,6 +131,7 @@ class TwitchBot(commands.Bot):
         self.ad_scheduler.start()
         asyncio.create_task(self._run_metrics_loop())
         asyncio.create_task(self._check_live_on_ready())
+        asyncio.create_task(veil.listen_decisions(self._on_modqueue_decision))
 
     async def _check_live_on_ready(self) -> None:
         """On startup, notify Discord if stream is already live (handles mid-stream restarts)."""
@@ -198,6 +202,7 @@ class TwitchBot(commands.Bot):
         owner = settings.TWITCH_OWNER_ID
         return [
             eventsub.ChatMessageSubscription(broadcaster_user_id=owner, user_id=settings.TWITCH_BOT_ID),
+            eventsub.ChatMessageDeleteSubscription(broadcaster_user_id=owner, user_id=settings.TWITCH_BOT_ID),
         ]
 
     def _build_owner_subscriptions(self) -> list:
@@ -212,7 +217,68 @@ class TwitchBot(commands.Bot):
             eventsub.ChannelCheerSubscription(broadcaster_user_id=owner),
             eventsub.ChannelRaidSubscription(to_broadcaster_user_id=owner),
             eventsub.ChannelPointsRedeemAddSubscription(broadcaster_user_id=owner),
+            eventsub.AutomodMessageHoldSubscription(broadcaster_user_id=owner, moderator_user_id=owner),
+            eventsub.AutomodMessageUpdateSubscription(broadcaster_user_id=owner, moderator_user_id=owner),
         ]
+
+    async def event_message_delete(self, payload: twitchio.ChatMessageDelete) -> None:
+        await veil.post_event("twitch.chat.message.delete", {"message_id": payload.message_id})
+
+    async def event_automod_message_hold(self, payload: twitchio.AutomodMessageHold) -> None:
+        mid = payload.message_id
+        if self.mod_engine.has(mid):
+            pending = self.mod_engine.add_hold_source(mid, HoldSource.TWITCH_AUTOMOD)
+            if pending:
+                await veil.post_event("modqueue.update", {
+                    "message_id": mid,
+                    "hold_sources": pending.hold_sources,
+                })
+        else:
+            chat_payload = {
+                "message_id": mid,
+                "username": payload.user.name,
+                "display_name": payload.user.display_name,
+                "message": payload.text,
+                "color": "",
+                "badges": [],
+                "platform": "twitch",
+            }
+            self.mod_engine.add_pending(mid, chat_payload, HoldSource.TWITCH_AUTOMOD)
+            await veil.post_event("modqueue.pending", {
+                **chat_payload,
+                "hold_sources": [HoldSource.TWITCH_AUTOMOD],
+            })
+
+    async def event_automod_message_update(self, payload: twitchio.AutomodMessageUpdate) -> None:
+        mid = payload.message_id
+        if not self.mod_engine.has(mid):
+            return
+        self.mod_engine.pop(mid)
+        await veil.post_event("modqueue.resolved", {
+            "message_id": mid,
+            "resolution": payload.status.lower(),
+        })
+
+    async def _on_modqueue_decision(self, message_id: str, decision: str, platform: str) -> None:
+        if platform != "twitch":
+            return
+        pending = self.mod_engine.get(message_id)
+        if not pending:
+            return
+        if HoldSource.TWITCH_AUTOMOD in pending.hold_sources:
+            try:
+                users = await self.fetch_users(ids=[int(settings.TWITCH_OWNER_ID)])
+                if users:
+                    owner = users[0]
+                    if decision == "approve":
+                        await owner.approve_automod_messages(message_id)
+                        log.info("AutoMod approved message %s via Twitch API.", message_id)
+                    else:
+                        await owner.deny_automod_messages(message_id)
+                        log.info("AutoMod denied message %s via Twitch API.", message_id)
+            except Exception:
+                log.error("Failed to call Twitch AutoMod API for %s", message_id, exc_info=True)
+        self.mod_engine.pop(message_id)
 
     async def event_subscription(self, payload: twitchio.ChannelSubscribe) -> None:
         if payload.gift:

@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     VEIL_URL: str | None = None
     VEIL_SECRET: str | None = None
 
+    # Moderation — JSON array of regex patterns, e.g. '["\\bbadword\\b"]'
+    MODERATION_PATTERNS: list[str] = []
+
     # Voice speaking detection — requires bot to join voice channels.
     # Disabled until py-cord ships a stable fix for Discord voice protocol (close code 4017).
     VOICE_SPEAKING_ENABLED: bool = False

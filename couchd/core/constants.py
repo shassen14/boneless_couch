@@ -128,6 +128,11 @@ class IdeaConfig:
     REACTION_AGAINST = "❌"
 
 
+class HoldSource:
+    BONELESS_COUCH = "boneless_couch"
+    TWITCH_AUTOMOD = "twitch_automod"
+
+
 class BrandColors:
     # Use discord.Color objects for easy integration with Embeds
     PRIMARY = discord.Color.brand_green()

@@ -9,7 +9,8 @@ from couchd.core.config import settings
 from couchd.core.db import get_session
 from couchd.core.models import StreamEvent, ProblemAttempt, SolutionPost, ProblemPost
 from couchd.core.clients.leetcode import LeetCodeClient
-from couchd.core.constants import CommandCooldowns
+from couchd.core.constants import CommandCooldowns, HoldSource
+from couchd.core.moderation import ModerationEngine
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
 from couchd.core.utils import get_active_session, compute_vod_timestamp
@@ -23,9 +24,15 @@ _URL_RE = re.compile(r"https?://\S+")
 
 
 class LCCommands(commands.Component):
-    def __init__(self, lc_client: LeetCodeClient, metrics_tracker: ChatVelocityTracker):
+    def __init__(
+        self,
+        lc_client: LeetCodeClient,
+        metrics_tracker: ChatVelocityTracker,
+        mod_engine: ModerationEngine,
+    ):
         self.lc_client = lc_client
         self.metrics_tracker = metrics_tracker
+        self.mod_engine = mod_engine
         self.cooldowns = CooldownManager()
 
     @commands.Component.listener()
@@ -35,7 +42,8 @@ class LCCommands(commands.Component):
         log.info(f"[CHAT] {payload.chatter.name}: {payload.text}")
         self.metrics_tracker.record_message()
         await self._check_solution_url(payload)
-        await veil.post_event("twitch.chat.message", {
+
+        chat_payload = {
             "username": payload.chatter.name,
             "display_name": payload.chatter.display_name,
             "message": payload.text,
@@ -43,7 +51,15 @@ class LCCommands(commands.Component):
             "badges": [b.set_id for b in payload.badges],
             "message_id": payload.id,
             "platform": "twitch",
-        })
+        }
+
+        if self.mod_engine.is_flagged(payload.text):
+            self.mod_engine.add_pending(payload.id, chat_payload, HoldSource.BONELESS_COUCH)
+            log.info("[MOD] Held message %s from %s", payload.id, payload.chatter.name)
+            await veil.post_event("modqueue.pending", {**chat_payload, "hold_sources": [HoldSource.BONELESS_COUCH]})
+            return
+
+        await veil.post_event("twitch.chat.message", chat_payload)
 
     async def _check_solution_url(self, payload: twitchio.ChatMessage) -> None:
         slug_match = _LC_SUBMISSION_SLUG.search(payload.text)
