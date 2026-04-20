@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands, tasks
 
 from couchd.core.clients import veil
+from couchd.core.config import settings
 
 log = logging.getLogger(__name__)
 
@@ -63,9 +64,10 @@ class VoiceWatcherCog(commands.Cog):
         self._sinks: dict[int, SpeakingSink] = {}
 
     async def cog_load(self) -> None:
-        self._silence_poll.start()
-        if self.bot.is_ready():
-            await self._scan_channels()
+        if settings.VOICE_SPEAKING_ENABLED:
+            self._silence_poll.start()
+            if self.bot.is_ready():
+                await self._scan_channels()
 
     def cog_unload(self) -> None:
         self._silence_poll.cancel()
@@ -84,7 +86,8 @@ class VoiceWatcherCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
-        await self._scan_channels()
+        if settings.VOICE_SPEAKING_ENABLED:
+            await self._scan_channels()
 
     async def _scan_channels(self) -> None:
         for guild in self.bot.guilds:
@@ -114,7 +117,8 @@ class VoiceWatcherCog(commands.Cog):
                 "channel_id": str(after.channel.id),
                 "channel_name": after.channel.name,
             })
-            await self._connect(after.channel)
+            if settings.VOICE_SPEAKING_ENABLED:
+                await self._connect(after.channel)
             return
 
         if left:
@@ -123,7 +127,7 @@ class VoiceWatcherCog(commands.Cog):
                 "username": member.name,
                 "channel_id": str(before.channel.id),
             })
-            if not any(not m.bot for m in before.channel.members):
+            if settings.VOICE_SPEAKING_ENABLED and not any(not m.bot for m in before.channel.members):
                 await self._disconnect(before.channel.id)
             return
 

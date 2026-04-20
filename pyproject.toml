@@ -8,7 +8,7 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     # social media: discord, twitch
-    "py-cord[voice] @ git+https://github.com/Pycord-Development/pycord.git",
+    "py-cord[voice]",
     "twitchio[starlette]",
     # configuration
     "python-dotenv",
@@ -31,9 +31,6 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["couchd"]
