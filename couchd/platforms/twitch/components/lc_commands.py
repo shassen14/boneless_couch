@@ -39,7 +39,7 @@ class LCCommands(commands.Component):
             "username": payload.chatter.name,
             "display_name": payload.chatter.display_name,
             "message": payload.text,
-            "color": str(payload.colour) if payload.colour else "#FFFFFF",
+            "color": payload.colour.html if payload.colour else "",
             "badges": [b.set_id for b in payload.badges],
             "message_id": payload.id,
             "platform": "twitch",
