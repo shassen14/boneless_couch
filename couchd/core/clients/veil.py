@@ -22,5 +22,7 @@ async def post_event(event_type: str, payload: dict) -> None:
             ) as resp:
                 if resp.status not in (200, 204):
                     log.warning("Veil POST %s → %d", event_type, resp.status)
+                else:
+                    log.debug("Veil POST %s → %d", event_type, resp.status)
     except Exception:
         log.warning("Veil POST error for %s", event_type, exc_info=True)
