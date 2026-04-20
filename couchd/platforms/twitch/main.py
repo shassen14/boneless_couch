@@ -203,6 +203,7 @@ class TwitchBot(commands.Bot):
         return [
             eventsub.ChatMessageSubscription(broadcaster_user_id=owner, user_id=settings.TWITCH_BOT_ID),
             eventsub.ChatMessageDeleteSubscription(broadcaster_user_id=owner, user_id=settings.TWITCH_BOT_ID),
+            eventsub.ChatClearUserMessagesSubscription(broadcaster_user_id=owner, user_id=settings.TWITCH_BOT_ID),
         ]
 
     def _build_owner_subscriptions(self) -> list:
@@ -223,6 +224,9 @@ class TwitchBot(commands.Bot):
 
     async def event_message_delete(self, payload: twitchio.ChatMessageDelete) -> None:
         await veil.post_event("twitch.chat.message.delete", {"message_id": payload.message_id})
+
+    async def event_chat_clear_user(self, payload: twitchio.ChannelChatClearUserMessages) -> None:
+        await veil.post_event("twitch.chat.clear_user", {"username": payload.user.name})
 
     async def event_automod_message_hold(self, payload: twitchio.AutomodMessageHold) -> None:
         mid = payload.message_id
