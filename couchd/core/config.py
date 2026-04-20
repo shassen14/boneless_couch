@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     SENTRY_DSN: str | None = None
     BOT_LOGS_WEBHOOK_URL: str | None = None
 
+    # Veil integration (optional — omit to disable event forwarding)
+    VEIL_URL: str | None = None
+    VEIL_SECRET: str | None = None
+
 
 # Create a single, importable instance of our settings.
 # This instance will be created only once when the module is first imported.

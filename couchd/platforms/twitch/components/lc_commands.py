@@ -13,6 +13,7 @@ from couchd.core.constants import CommandCooldowns
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
 from couchd.core.utils import get_active_session, compute_vod_timestamp
+from couchd.core.clients import veil
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,15 @@ class LCCommands(commands.Component):
         log.info(f"[CHAT] {payload.chatter.name}: {payload.text}")
         self.metrics_tracker.record_message()
         await self._check_solution_url(payload)
+        await veil.post_event("twitch.chat.message", {
+            "username": payload.chatter.name,
+            "display_name": payload.chatter.display_name,
+            "message": payload.text,
+            "color": str(payload.colour) if payload.colour else "#FFFFFF",
+            "badges": [b.set_id for b in payload.badges],
+            "message_id": payload.id,
+            "platform": "twitch",
+        })
 
     async def _check_solution_url(self, payload: twitchio.ChatMessage) -> None:
         slug_match = _LC_SUBMISSION_SLUG.search(payload.text)

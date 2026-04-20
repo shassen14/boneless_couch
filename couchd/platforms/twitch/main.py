@@ -19,6 +19,7 @@ from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
+from couchd.core.clients import veil
 from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.scheduler import AdScheduler
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
@@ -45,16 +46,42 @@ class TwitchBot(commands.Bot):
             owner_id=settings.TWITCH_OWNER_ID,
             prefix="!",
             scopes=twitchio.Scopes(
+                # Chat
+                user_read_chat=True,
+                user_write_chat=True,
+                user_bot=True,
+                channel_bot=True,
+                # Ads
                 clips_edit=True,
                 channel_edit_commercial=True,
                 channel_manage_ads=True,
                 channel_read_ads=True,
-                user_write_chat=True,
-                user_read_chat=True,
-                channel_bot=True,
-                user_bot=True,
+                # Mod tools
                 moderator_manage_chat_messages=True,
+                moderator_manage_banned_users=True,
+                moderator_manage_announcements=True,
+                moderator_manage_chat_settings=True,
+                moderator_manage_shoutouts=True,
+                # Stream management
                 channel_manage_broadcast=True,
+                channel_manage_raids=True,
+                # Alerts / EventSub
+                channel_read_subscriptions=True,
+                bits_read=True,
+                channel_read_redemptions=True,
+                channel_manage_redemptions=True,
+                # Polls / predictions / goals / hype train
+                channel_read_polls=True,
+                channel_read_predictions=True,
+                channel_read_goals=True,
+                channel_read_hype_train=True,
+                channel_read_vips=True,
+                # Whispers
+                user_manage_whispers=True,
+                # Read-only moderation data
+                moderation_read=True,
+                moderator_read_followers=True,
+                moderator_read_chatters=True,
             ),
         )
         self.lc_client = LeetCodeClient()
@@ -76,19 +103,17 @@ class TwitchBot(commands.Bot):
 
         # Subscribe to chat and stream lifecycle on startup (works after token is saved).
         # On first run this will fail gracefully — auth happens via event_oauth_authorized.
-        chat_sub = eventsub.ChatMessageSubscription(
-            broadcaster_user_id=settings.TWITCH_OWNER_ID,
-            user_id=settings.TWITCH_BOT_ID,
-        )
-        stream_online_sub = eventsub.StreamOnlineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
-        stream_offline_sub = eventsub.StreamOfflineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
-        for sub in (chat_sub, stream_online_sub, stream_offline_sub):
+        owner = settings.TWITCH_OWNER_ID
+        tagged = [(s, None) for s in self._build_bot_subscriptions()] + [
+            (s, owner) for s in self._build_owner_subscriptions()
+        ]
+        for sub, token_for in tagged:
             try:
-                await self.subscribe_websocket(payload=sub)
+                await self.subscribe_websocket(payload=sub, token_for=token_for)
                 log.info("Subscribed to %s via WebSocket.", sub.__class__.__name__)
             except Exception as e:
                 log.warning(
-                    "Could not subscribe to %s on startup (no saved token?): %s. "
+                    "Could not subscribe to %s on startup: %s. "
                     "Visit http://localhost:4343/oauth to authorize.",
                     sub.__class__.__name__,
                     e,
@@ -168,22 +193,97 @@ class TwitchBot(commands.Bot):
         log.info("Stream offline — closing session and notifying Discord bot.")
         await self._trigger_offline()
 
+    def _build_bot_subscriptions(self) -> list:
+        """Subscriptions that use the bot's user token."""
+        owner = settings.TWITCH_OWNER_ID
+        return [
+            eventsub.ChatMessageSubscription(broadcaster_user_id=owner, user_id=settings.TWITCH_BOT_ID),
+        ]
+
+    def _build_owner_subscriptions(self) -> list:
+        """Subscriptions that require the broadcaster's user token."""
+        owner = settings.TWITCH_OWNER_ID
+        return [
+            eventsub.StreamOnlineSubscription(broadcaster_user_id=owner),
+            eventsub.StreamOfflineSubscription(broadcaster_user_id=owner),
+            eventsub.ChannelSubscribeSubscription(broadcaster_user_id=owner),
+            eventsub.ChannelSubscribeMessageSubscription(broadcaster_user_id=owner),
+            eventsub.ChannelSubscriptionGiftSubscription(broadcaster_user_id=owner),
+            eventsub.ChannelCheerSubscription(broadcaster_user_id=owner),
+            eventsub.ChannelRaidSubscription(to_broadcaster_user_id=owner),
+            eventsub.ChannelPointsRedeemAddSubscription(broadcaster_user_id=owner),
+        ]
+
+    async def event_subscription(self, payload: twitchio.ChannelSubscribe) -> None:
+        if payload.gift:
+            return
+        await veil.post_event("twitch.sub", {
+            "username": payload.user.name,
+            "display_name": payload.user.display_name,
+            "tier": payload.tier,
+            "is_gift": False,
+        })
+
+    async def event_subscription_message(self, payload: twitchio.ChannelSubscriptionMessage) -> None:
+        await veil.post_event("twitch.resub", {
+            "username": payload.user.name,
+            "display_name": payload.user.display_name,
+            "tier": payload.tier,
+            "cumulative_months": payload.cumulative_months,
+            "streak_months": payload.streak_months or 0,
+            "message": payload.text,
+        })
+
+    async def event_subscription_gift(self, payload: twitchio.ChannelSubscriptionGift) -> None:
+        gifter = payload.user
+        await veil.post_event("twitch.giftbomb", {
+            "gifter_username": gifter.name if gifter else "anonymous",
+            "gifter_display_name": gifter.display_name if gifter else "Anonymous",
+            "count": payload.total,
+            "tier": payload.tier,
+        })
+
+    async def event_cheer(self, payload: twitchio.ChannelCheer) -> None:
+        user = payload.user
+        await veil.post_event("twitch.bits", {
+            "username": user.name if user else "anonymous",
+            "display_name": user.display_name if user else "Anonymous",
+            "bits": payload.bits,
+            "message": payload.message,
+        })
+
+    async def event_raid(self, payload: twitchio.ChannelRaid) -> None:
+        await veil.post_event("twitch.raid", {
+            "from_username": payload.from_broadcaster.name,
+            "from_display_name": payload.from_broadcaster.display_name,
+            "viewer_count": payload.viewer_count,
+        })
+
+    async def event_custom_redemption_add(self, payload: twitchio.ChannelPointsRedemptionAdd) -> None:
+        await veil.post_event("twitch.channel_point_redeem", {
+            "username": payload.user.name,
+            "display_name": payload.user.display_name,
+            "reward_id": payload.reward.id,
+            "reward_title": payload.reward.title,
+            "reward_cost": payload.reward.cost,
+            "user_input": payload.user_input,
+        })
+
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
     ) -> None:
-        """Called on first-time OAuth. Saves the token then subscribes to chat."""
         await self.add_token(payload.access_token, payload.refresh_token)
-        log.info(f"✅ Authorization successful for User ID: {payload.user_id}! Tokens saved.")
+        log.info("Authorization successful for User ID: %s. Tokens saved.", payload.user_id)
 
-        chat_sub = eventsub.ChatMessageSubscription(
-            broadcaster_user_id=settings.TWITCH_OWNER_ID,
-            user_id=settings.TWITCH_BOT_ID,
-        )
-        stream_online_sub = eventsub.StreamOnlineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
-        stream_offline_sub = eventsub.StreamOfflineSubscription(broadcaster_user_id=settings.TWITCH_OWNER_ID)
-        for sub in (chat_sub, stream_online_sub, stream_offline_sub):
+        is_owner = str(payload.user_id) == str(settings.TWITCH_OWNER_ID)
+        if is_owner:
+            tagged = [(s, settings.TWITCH_OWNER_ID) for s in self._build_owner_subscriptions()]
+        else:
+            tagged = [(s, None) for s in self._build_bot_subscriptions()]
+
+        for sub, token_for in tagged:
             try:
-                await self.subscribe_websocket(payload=sub)
+                await self.subscribe_websocket(payload=sub, token_for=token_for)
                 log.info("Subscribed to %s after OAuth.", sub.__class__.__name__)
             except Exception as e:
                 log.error("Failed to subscribe to %s after OAuth", sub.__class__.__name__, exc_info=e)
