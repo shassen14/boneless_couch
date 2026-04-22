@@ -88,6 +88,47 @@ class TwitchClient:
             log.error("Exception while checking Twitch stream status", exc_info=e)
             return None
 
+    async def get_user_id(self, username: str) -> str | None:
+        """Fetches the Twitch user ID for a given username. Returns the ID string or None."""
+        if not self.app_token:
+            await self._get_app_token()
+
+        if not self.app_token:
+            return None
+
+        url = f"https://api.twitch.tv/helix/users?login={username}"
+        headers = {
+            "Client-ID": self.client_id,
+            "Authorization": f"Bearer {self.app_token}",
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 401:
+                        log.warning("Twitch token expired. Refreshing...")
+                        await self._get_app_token()
+                        headers["Authorization"] = f"Bearer {self.app_token}"
+                        async with session.get(url, headers=headers) as retry_response:
+                            if retry_response.status == 200:
+                                data = await retry_response.json()
+                            else:
+                                return None
+                    elif response.status == 200:
+                        data = await response.json()
+                    else:
+                        log.error(f"Twitch API Error: {response.status}")
+                        return None
+
+            if data and data.get("data"):
+                return data["data"][0]["id"]
+
+            return None
+
+        except Exception as e:
+            log.error("Exception while fetching Twitch user ID", exc_info=e)
+            return None
+
     async def get_clip(self, clip_id: str) -> dict | None:
         """Fetches clip metadata from Twitch. Returns the clip object or None."""
         if not self.app_token:

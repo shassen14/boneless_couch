@@ -34,6 +34,7 @@ async def post_event(event_type: str, payload: dict) -> None:
 
 async def listen_decisions(
     on_decision: Callable[[str, str, str], Awaitable[None]],
+    on_connect: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     """Connect to veil WS and call on_decision(message_id, decision, platform) for modqueue decisions."""
     if not settings.VEIL_URL:
@@ -46,6 +47,8 @@ async def listen_decisions(
                 async with session.ws_connect(ws_url) as ws:
                     log.info("Connected to veil WS for modqueue decisions.")
                     delay = 1
+                    if on_connect:
+                        await on_connect()
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = msg.json()

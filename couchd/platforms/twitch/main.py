@@ -17,6 +17,7 @@ from couchd.core.models import StreamSession
 from couchd.core.constants import ChatMetrics, HoldSource
 from couchd.core.moderation import ModerationEngine
 from couchd.core.clients.twitch import TwitchClient
+from couchd.core.clients.emotes import EmoteClient
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
@@ -91,6 +92,7 @@ class TwitchBot(commands.Bot):
         self.metrics_tracker = ChatVelocityTracker()
         self.github_client = GitHubClient()
         self.twitch_client = TwitchClient()
+        self.emote_client = EmoteClient()
         self.youtube_client = YouTubeRSSClient() if settings.YOUTUBE_CHANNEL_ID else None
         self.ad_scheduler = AdScheduler(self, self.ad_manager, self.youtube_client)
         self.mod_engine = ModerationEngine(settings.MODERATION_PATTERNS)
@@ -131,7 +133,10 @@ class TwitchBot(commands.Bot):
         self.ad_scheduler.start()
         asyncio.create_task(self._run_metrics_loop())
         asyncio.create_task(self._check_live_on_ready())
-        asyncio.create_task(veil.listen_decisions(self._on_modqueue_decision))
+        asyncio.create_task(veil.listen_decisions(
+            self._on_modqueue_decision,
+            on_connect=self._push_emotes,
+        ))
 
     async def _check_live_on_ready(self) -> None:
         """On startup, notify Discord if stream is already live (handles mid-stream restarts)."""
@@ -156,6 +161,15 @@ class TwitchBot(commands.Bot):
                 await db.execute(text("SELECT pg_notify('stream_online', :p)"), {"p": notify_payload})
         except Exception:
             log.error("Error in startup live-check", exc_info=True)
+
+    async def _push_emotes(self) -> None:
+        try:
+            channel_id = await self.twitch_client.get_user_id(settings.TWITCH_CHANNEL)
+            emotes = await self.emote_client.fetch_all(settings.TWITCH_CHANNEL, channel_id or "")
+            await veil.post_event("emotes.update", {"emote_map": emotes})
+            log.info("Pushed %d emotes to veil.", len(emotes))
+        except Exception:
+            log.error("Failed to push emotes to veil.", exc_info=True)
 
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         if payload.type != "live":
