@@ -118,7 +118,7 @@ class EmoteClient:
             file = next((f for f in files if f.get("name", "").startswith("2x")), files[0] if files else None)
             if not file:
                 continue
-            result[emote["name"]] = "https:" + host["url"] + file["name"]
+            result[emote["name"]] = "https:" + host["url"] + "/" + file["name"]
         return result
 
     @staticmethod

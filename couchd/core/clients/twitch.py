@@ -129,6 +129,86 @@ class TwitchClient:
             log.error("Exception while fetching Twitch user ID", exc_info=e)
             return None
 
+    async def get_global_emotes(self) -> dict[str, str]:
+        """Fetches Twitch global emotes. Returns {name: url} or {} on error."""
+        if not self.app_token:
+            await self._get_app_token()
+        if not self.app_token:
+            return {}
+
+        url = "https://api.twitch.tv/helix/chat/emotes/global"
+        headers = {
+            "Client-ID": self.client_id,
+            "Authorization": f"Bearer {self.app_token}",
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 401:
+                        log.warning("Twitch token expired. Refreshing...")
+                        await self._get_app_token()
+                        headers["Authorization"] = f"Bearer {self.app_token}"
+                        async with session.get(url, headers=headers) as retry:
+                            if retry.status == 200:
+                                data = await retry.json()
+                            else:
+                                return {}
+                    elif response.status == 200:
+                        data = await response.json()
+                    else:
+                        log.error(f"Twitch API Error: {response.status}")
+                        return {}
+
+            return {
+                e["name"]: f"https://static-cdn.jtvnw.net/emoticons/v2/{e['id']}/default/dark/2.0"
+                for e in data.get("data", [])
+            }
+        except Exception:
+            log.error("Exception while fetching Twitch global emotes", exc_info=True)
+            return {}
+
+    async def get_channel_emotes(self, broadcaster_id: str) -> dict[str, str]:
+        """Fetches emotes for a specific channel. Returns {name: url} or {} on error."""
+        if not broadcaster_id:
+            return {}
+        if not self.app_token:
+            await self._get_app_token()
+        if not self.app_token:
+            return {}
+
+        url = f"https://api.twitch.tv/helix/chat/emotes?broadcaster_id={broadcaster_id}"
+        headers = {
+            "Client-ID": self.client_id,
+            "Authorization": f"Bearer {self.app_token}",
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 401:
+                        log.warning("Twitch token expired. Refreshing...")
+                        await self._get_app_token()
+                        headers["Authorization"] = f"Bearer {self.app_token}"
+                        async with session.get(url, headers=headers) as retry:
+                            if retry.status == 200:
+                                data = await retry.json()
+                            else:
+                                return {}
+                    elif response.status == 200:
+                        data = await response.json()
+                    else:
+                        log.error(f"Twitch API Error: {response.status}")
+                        return {}
+
+            return {
+                e["name"]: f"https://static-cdn.jtvnw.net/emoticons/v2/{e['id']}/default/dark/2.0"
+                for e in data.get("data", [])
+            }
+        except Exception:
+            log.error("Exception while fetching Twitch channel emotes", exc_info=True)
+            return {}
+
     async def get_clip(self, clip_id: str) -> dict | None:
         """Fetches clip metadata from Twitch. Returns the clip object or None."""
         if not self.app_token:

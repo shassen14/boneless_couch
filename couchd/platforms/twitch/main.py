@@ -165,7 +165,12 @@ class TwitchBot(commands.Bot):
     async def _push_emotes(self) -> None:
         try:
             channel_id = await self.twitch_client.get_user_id(settings.TWITCH_CHANNEL)
-            emotes = await self.emote_client.fetch_all(settings.TWITCH_CHANNEL, channel_id or "")
+            twitch_global, twitch_channel, third_party = await asyncio.gather(
+                self.twitch_client.get_global_emotes(),
+                self.twitch_client.get_channel_emotes(channel_id or ""),
+                self.emote_client.fetch_all(settings.TWITCH_CHANNEL, channel_id or ""),
+            )
+            emotes = {**twitch_global, **twitch_channel, **third_party}
             await veil.post_event("emotes.update", {"emote_map": emotes})
             log.info("Pushed %d emotes to veil.", len(emotes))
         except Exception:
