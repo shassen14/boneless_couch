@@ -220,6 +220,7 @@ class TwitchBot(commands.Bot):
             eventsub.ChannelPointsRedeemAddSubscription(broadcaster_user_id=owner),
             eventsub.AutomodMessageHoldSubscription(broadcaster_user_id=owner, moderator_user_id=owner),
             eventsub.AutomodMessageUpdateSubscription(broadcaster_user_id=owner, moderator_user_id=owner),
+            eventsub.ChannelFollowSubscription(broadcaster_user_id=owner, moderator_user_id=owner),
         ]
 
     async def event_message_delete(self, payload: twitchio.ChatMessageDelete) -> None:
@@ -327,6 +328,12 @@ class TwitchBot(commands.Bot):
             "from_username": payload.from_broadcaster.name,
             "from_display_name": payload.from_broadcaster.display_name,
             "viewer_count": payload.viewer_count,
+        })
+
+    async def event_channel_follow(self, payload: twitchio.ChannelFollow) -> None:
+        await veil.post_event("twitch.follower", {
+            "username": payload.user.name,
+            "display_name": payload.user.display_name,
         })
 
     async def event_custom_redemption_add(self, payload: twitchio.ChannelPointsRedemptionAdd) -> None:
