@@ -13,8 +13,8 @@ import sentry_sdk
 from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
-from couchd.core.models import StreamSession
-from couchd.core.constants import ChatMetrics, HoldSource
+from couchd.core.models import StreamSession, ViewerInteraction
+from couchd.core.constants import ChatMetrics, HoldSource, InteractionType
 from couchd.core.moderation import ModerationEngine
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients.emotes import EmoteClient
@@ -30,7 +30,7 @@ from couchd.platforms.twitch.components.project_commands import ProjectCommands
 from couchd.platforms.twitch.components.activity_commands import ActivityCommands
 from couchd.platforms.twitch.components.ad_commands import AdCommands
 from couchd.platforms.twitch.components.general_commands import GeneralCommands
-from couchd.core.utils import get_active_session
+from couchd.core.utils import get_active_session, get_overlay_stats
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(dsn=settings.SENTRY_DSN)
@@ -135,7 +135,7 @@ class TwitchBot(commands.Bot):
         asyncio.create_task(self._check_live_on_ready())
         asyncio.create_task(veil.listen_decisions(
             self._on_modqueue_decision,
-            on_connect=self._push_emotes,
+            on_connect=self._on_connect,
         ))
 
     async def _check_live_on_ready(self) -> None:
@@ -161,6 +161,18 @@ class TwitchBot(commands.Bot):
                 await db.execute(text("SELECT pg_notify('stream_online', :p)"), {"p": notify_payload})
         except Exception:
             log.error("Error in startup live-check", exc_info=True)
+
+    async def _push_overlay_stats(self) -> None:
+        try:
+            stats = await get_overlay_stats()
+            await veil.post_event("stream.stats.bootstrap", stats)
+            log.info("Pushed overlay stats to veil.")
+        except Exception:
+            log.error("Failed to push overlay stats to veil.", exc_info=True)
+
+    async def _on_connect(self) -> None:
+        await self._push_emotes()
+        await self._push_overlay_stats()
 
     async def _push_emotes(self) -> None:
         try:
@@ -313,6 +325,15 @@ class TwitchBot(commands.Bot):
             "tier": payload.tier,
             "is_gift": False,
         })
+        session = await get_active_session()
+        async with get_session() as db:
+            db.add(ViewerInteraction(
+                session_id=session.id if session else None,
+                interaction_type=InteractionType.SUB,
+                username=payload.user.name,
+                display_name=payload.user.display_name,
+                tier=payload.tier,
+            ))
 
     async def event_subscription_message(self, payload: twitchio.ChannelSubscriptionMessage) -> None:
         await veil.post_event("twitch.resub", {
@@ -323,6 +344,17 @@ class TwitchBot(commands.Bot):
             "streak_months": payload.streak_months or 0,
             "message": payload.text,
         })
+        session = await get_active_session()
+        async with get_session() as db:
+            db.add(ViewerInteraction(
+                session_id=session.id if session else None,
+                interaction_type=InteractionType.RESUB,
+                username=payload.user.name,
+                display_name=payload.user.display_name,
+                tier=payload.tier,
+                cumulative_months=payload.cumulative_months,
+                streak_months=payload.streak_months,
+            ))
 
     async def event_subscription_gift(self, payload: twitchio.ChannelSubscriptionGift) -> None:
         gifter = payload.user
@@ -332,6 +364,16 @@ class TwitchBot(commands.Bot):
             "count": payload.total,
             "tier": payload.tier,
         })
+        session = await get_active_session()
+        async with get_session() as db:
+            db.add(ViewerInteraction(
+                session_id=session.id if session else None,
+                interaction_type=InteractionType.GIFTBOMB,
+                username=gifter.name if gifter else None,
+                display_name=gifter.display_name if gifter else None,
+                tier=payload.tier,
+                gift_count=payload.total,
+            ))
 
     async def event_cheer(self, payload: twitchio.ChannelCheer) -> None:
         user = payload.user
@@ -341,6 +383,15 @@ class TwitchBot(commands.Bot):
             "bits": payload.bits,
             "message": payload.message,
         })
+        session = await get_active_session()
+        async with get_session() as db:
+            db.add(ViewerInteraction(
+                session_id=session.id if session else None,
+                interaction_type=InteractionType.BITS,
+                username=user.name if user else None,
+                display_name=user.display_name if user else None,
+                bits=payload.bits,
+            ))
 
     async def event_raid(self, payload: twitchio.ChannelRaid) -> None:
         await veil.post_event("twitch.raid", {
@@ -348,12 +399,30 @@ class TwitchBot(commands.Bot):
             "from_display_name": payload.from_broadcaster.display_name,
             "viewer_count": payload.viewer_count,
         })
+        session = await get_active_session()
+        async with get_session() as db:
+            db.add(ViewerInteraction(
+                session_id=session.id if session else None,
+                interaction_type=InteractionType.RAID,
+                username=payload.from_broadcaster.name,
+                display_name=payload.from_broadcaster.display_name,
+                viewer_count=payload.viewer_count,
+            ))
 
     async def event_channel_follow(self, payload: twitchio.ChannelFollow) -> None:
         await veil.post_event("twitch.follower", {
             "username": payload.user.name,
             "display_name": payload.user.display_name,
         })
+        session = await get_active_session()
+        async with get_session() as db:
+            db.add(ViewerInteraction(
+                session_id=session.id if session else None,
+                interaction_type=InteractionType.FOLLOW,
+                username=payload.user.name,
+                display_name=payload.user.display_name,
+                timestamp=payload.followed_at,
+            ))
 
     async def event_custom_redemption_add(self, payload: twitchio.ChannelPointsRedemptionAdd) -> None:
         await veil.post_event("twitch.channel_point_redeem", {

@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     UniqueConstraint,
 )
@@ -179,4 +180,26 @@ class IdeaPost(Base):
     removed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class ViewerInteraction(Base):
+    __tablename__ = "viewer_interactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("stream_sessions.id"), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    interaction_type: Mapped[str] = mapped_column(String, nullable=False)
+    username: Mapped[str | None] = mapped_column(String, nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    tier: Mapped[str | None] = mapped_column(String, nullable=True)
+    cumulative_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    streak_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gift_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    viewer_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("ix_viewer_interactions_type_ts", "interaction_type", "timestamp"),
+        Index("ix_viewer_interactions_username", "username"),
     )

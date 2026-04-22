@@ -1,11 +1,12 @@
 # couchd/core/utils.py
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 
 from couchd.core.db import get_session
-from couchd.core.models import StreamSession
-from couchd.core.constants import Platform
+from couchd.core.models import StreamSession, ViewerInteraction
+from couchd.core.constants import Platform, InteractionType
 
 
 def compute_vod_timestamp(start_time: datetime) -> str:
@@ -29,3 +30,47 @@ async def get_active_session() -> StreamSession | None:
             .order_by(StreamSession.start_time.desc())
         )
         return result.scalars().first()
+
+
+async def get_overlay_stats() -> dict:
+    async with get_session() as db:
+        last_follow_r, recent_subs_r, longest_subs_r = await asyncio.gather(
+            db.execute(
+                select(ViewerInteraction)
+                .where(ViewerInteraction.interaction_type == InteractionType.FOLLOW)
+                .order_by(ViewerInteraction.timestamp.desc()).limit(1)
+            ),
+            db.execute(
+                select(ViewerInteraction)
+                .where(ViewerInteraction.interaction_type.in_([
+                    InteractionType.SUB, InteractionType.RESUB, InteractionType.GIFTBOMB,
+                ]))
+                .order_by(ViewerInteraction.timestamp.desc()).limit(5)
+            ),
+            db.execute(
+                select(ViewerInteraction)
+                .where(
+                    (ViewerInteraction.interaction_type == InteractionType.RESUB)
+                    & (ViewerInteraction.cumulative_months != None)
+                )
+                .order_by(ViewerInteraction.cumulative_months.desc()).limit(5)
+            ),
+        )
+        last_follow = last_follow_r.scalars().first()
+        recent_subs = recent_subs_r.scalars().all()
+        longest_subs = longest_subs_r.scalars().all()
+
+    def _row(v: ViewerInteraction) -> dict:
+        return {
+            "username": v.username, "display_name": v.display_name,
+            "interaction_type": v.interaction_type, "tier": v.tier,
+            "cumulative_months": v.cumulative_months, "gift_count": v.gift_count,
+            "bits": v.bits, "viewer_count": v.viewer_count,
+            "timestamp": v.timestamp.isoformat(),
+        }
+
+    return {
+        "last_follower": _row(last_follow) if last_follow else {},
+        "recent_subs": [_row(r) for r in recent_subs],
+        "longest_subs": [_row(r) for r in longest_subs],
+    }

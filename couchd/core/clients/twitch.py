@@ -209,6 +209,62 @@ class TwitchClient:
             log.error("Exception while fetching Twitch channel emotes", exc_info=True)
             return {}
 
+    async def get_followers(self, broadcaster_id: str, user_token: str, *, after: str | None = None) -> tuple[list[dict], str | None]:
+        """GET /helix/channels/followers — returns (items, next_cursor). Requires moderator:read:followers."""
+        params = f"broadcaster_id={broadcaster_id}&first=100"
+        if after:
+            params += f"&after={after}"
+        url = f"https://api.twitch.tv/helix/channels/followers?{params}"
+        headers = {"Client-ID": self.client_id, "Authorization": f"Bearer {user_token}"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        log.error("get_followers error: %s", response.status)
+                        return [], None
+                    data = await response.json()
+            cursor = data.get("pagination", {}).get("cursor")
+            return data.get("data", []), cursor or None
+        except Exception:
+            log.error("Exception in get_followers", exc_info=True)
+            return [], None
+
+    async def get_subscribers(self, broadcaster_id: str, user_token: str, *, after: str | None = None) -> tuple[list[dict], str | None]:
+        """GET /helix/subscriptions — returns (items, next_cursor). Requires channel:read:subscriptions."""
+        params = f"broadcaster_id={broadcaster_id}&first=100"
+        if after:
+            params += f"&after={after}"
+        url = f"https://api.twitch.tv/helix/subscriptions?{params}"
+        headers = {"Client-ID": self.client_id, "Authorization": f"Bearer {user_token}"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        log.error("get_subscribers error: %s", response.status)
+                        return [], None
+                    data = await response.json()
+            cursor = data.get("pagination", {}).get("cursor")
+            return data.get("data", []), cursor or None
+        except Exception:
+            log.error("Exception in get_subscribers", exc_info=True)
+            return [], None
+
+    async def get_bits_leaderboard(self, broadcaster_id: str, user_token: str, *, count: int = 100) -> list[dict]:
+        """GET /helix/bits/leaderboard?count=100&period=all — returns leaderboard entries. Requires bits:read."""
+        url = f"https://api.twitch.tv/helix/bits/leaderboard?count={count}&period=all&broadcaster_id={broadcaster_id}"
+        headers = {"Client-ID": self.client_id, "Authorization": f"Bearer {user_token}"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        log.error("get_bits_leaderboard error: %s", response.status)
+                        return []
+                    data = await response.json()
+            return data.get("data", [])
+        except Exception:
+            log.error("Exception in get_bits_leaderboard", exc_info=True)
+            return []
+
     async def get_clip(self, clip_id: str) -> dict | None:
         """Fetches clip metadata from Twitch. Returns the clip object or None."""
         if not self.app_token:

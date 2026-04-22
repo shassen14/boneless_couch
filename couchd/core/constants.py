@@ -13,6 +13,15 @@ class EventType(str, Enum):
     TASK = "task"
 
 
+class InteractionType(str, Enum):
+    FOLLOW    = "follow"
+    SUB       = "sub"
+    RESUB     = "resub"
+    GIFTBOMB  = "giftbomb"
+    BITS      = "bits"
+    RAID      = "raid"
+
+
 TASK_DONE = "done"
 
 MACRO_EVENT_TYPES = frozenset({
