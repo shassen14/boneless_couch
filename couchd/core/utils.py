@@ -34,10 +34,20 @@ async def get_active_session() -> StreamSession | None:
 
 async def get_overlay_stats() -> dict:
     async with get_session() as db:
-        last_follow_r, recent_subs_r, longest_subs_r = await asyncio.gather(
+        last_follow_r, last_raid_r, last_bits_r, recent_subs_r, longest_subs_r = await asyncio.gather(
             db.execute(
                 select(ViewerInteraction)
                 .where(ViewerInteraction.interaction_type == InteractionType.FOLLOW)
+                .order_by(ViewerInteraction.timestamp.desc()).limit(1)
+            ),
+            db.execute(
+                select(ViewerInteraction)
+                .where(ViewerInteraction.interaction_type == InteractionType.RAID)
+                .order_by(ViewerInteraction.timestamp.desc()).limit(1)
+            ),
+            db.execute(
+                select(ViewerInteraction)
+                .where(ViewerInteraction.interaction_type == InteractionType.BITS)
                 .order_by(ViewerInteraction.timestamp.desc()).limit(1)
             ),
             db.execute(
@@ -57,6 +67,8 @@ async def get_overlay_stats() -> dict:
             ),
         )
         last_follow = last_follow_r.scalars().first()
+        last_raid = last_raid_r.scalars().first()
+        last_bits = last_bits_r.scalars().first()
         recent_subs = recent_subs_r.scalars().all()
         longest_subs = longest_subs_r.scalars().all()
 
@@ -71,6 +83,8 @@ async def get_overlay_stats() -> dict:
 
     return {
         "last_follower": _row(last_follow) if last_follow else {},
+        "last_raider": _row(last_raid) if last_raid else {},
+        "last_bits": _row(last_bits) if last_bits else {},
         "recent_subs": [_row(r) for r in recent_subs],
         "longest_subs": [_row(r) for r in longest_subs],
     }
