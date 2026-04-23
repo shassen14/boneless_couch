@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 
+from couchd.core.config import settings
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, ViewerInteraction
 from couchd.core.constants import Platform, InteractionType
@@ -63,7 +64,10 @@ async def get_overlay_stats() -> dict:
                     func.max(ViewerInteraction.display_name).label("display_name"),
                     func.count().label("months"),
                 )
-                .where(ViewerInteraction.interaction_type.in_([InteractionType.SUB, InteractionType.RESUB]))
+                .where(
+                    ViewerInteraction.interaction_type.in_([InteractionType.SUB, InteractionType.RESUB])
+                    & (ViewerInteraction.username != settings.TWITCH_CHANNEL)
+                )
                 .group_by(ViewerInteraction.username)
                 .order_by(func.count().desc())
                 .limit(5)
