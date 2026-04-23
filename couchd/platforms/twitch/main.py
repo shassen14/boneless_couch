@@ -470,6 +470,7 @@ class TwitchBot(commands.Bot):
 
         is_owner = str(payload.user_id) == str(settings.TWITCH_OWNER_ID)
         if is_owner:
+            asyncio.create_task(self._push_emotes())
             tagged = [(s, settings.TWITCH_OWNER_ID) for s in self._build_owner_subscriptions()]
         else:
             tagged = [(s, None) for s in self._build_bot_subscriptions()]
