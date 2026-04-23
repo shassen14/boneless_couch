@@ -32,7 +32,7 @@ twitchio v3 handles OAuth via a built-in web server. Two accounts must authorize
 2. Open a **private/incognito window**, log into Twitch as the **bot account**.
 3. Visit the following URL and authorize:
    ```
-   http://localhost:4343/oauth?scopes=user:read:chat+user:write:chat+user:bot+channel:bot+moderator:manage:chat_messages+moderator:manage:banned_users+moderator:manage:announcements+moderator:manage:chat_settings+moderator:manage:shoutouts+user:manage:whispers+moderation:read+moderator:read:followers+moderator:read:chatters
+   http://localhost:4343/oauth?scopes=user:read:chat+user:write:chat+user:bot+channel:bot+moderator:manage:chat_messages+moderator:manage:banned_users+moderator:manage:announcements+moderator:manage:chat_settings+moderator:manage:shoutouts+moderator:manage:automod+user:manage:whispers+moderation:read+moderator:read:followers+moderator:read:chatters
    ```
 
 ### 3b. Authorize the streamer account
@@ -42,12 +42,13 @@ Subscriptions for subs, bits, raids, redemptions, and stream online/offline requ
 4. In the **same (or a new) incognito window**, log into Twitch as your **streamer account**.
 5. Visit the following URL and authorize:
    ```
-   http://localhost:4343/oauth?scopes=channel:read:subscriptions+bits:read+channel:read:redemptions+channel:manage:redemptions+channel:manage:broadcast+channel:manage:raids+channel:edit:commercial+channel:manage:ads+channel:read:ads+clips:edit+channel:read:polls+channel:read:predictions+channel:read:goals+channel:read:hype_train+channel:read:vips
+   http://localhost:4343/oauth?scopes=channel:read:subscriptions+bits:read+channel:read:redemptions+channel:manage:redemptions+channel:manage:broadcast+channel:manage:raids+channel:edit:commercial+channel:manage:ads+channel:read:ads+clips:edit+channel:read:polls+channel:read:predictions+channel:read:goals+channel:read:hype_train+channel:read:vips+user:read:emotes
    ```
 6. The bot saves both tokens automatically. Subsequent runs load them without a browser step.
 
-> **Re-authorizing after adding scopes:** Delete the saved token files (check your twitchio
-> tokens directory), then repeat steps 3a–3b above.
+> **Re-authorizing after adding scopes:** Append `&force_verify=true` to the OAuth URL and
+> repeat the relevant step above. Without it, Twitch silently returns the old cached token and
+> the new scopes are not granted. twitchio will overwrite the stored token automatically.
 
 ## 4. Grant Channel Permissions
 
