@@ -32,6 +32,36 @@ async def post_event(event_type: str, payload: dict) -> None:
         log.warning("Veil POST error for %s", event_type, exc_info=True)
 
 
+async def _post(path: str) -> None:
+    if not settings.VEIL_URL:
+        return
+    headers = {}
+    if settings.VEIL_SECRET:
+        headers["Authorization"] = f"Bearer {settings.VEIL_SECRET}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{settings.VEIL_URL}{path}",
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                log.info("veil POST %s → %d", path, resp.status)
+    except Exception:
+        log.warning("Veil POST error for %s", path, exc_info=True)
+
+
+async def alerts_on() -> None:
+    await _post("/alerts/on")
+
+
+async def alerts_off() -> None:
+    await _post("/alerts/off")
+
+
+async def clear_alert_queue() -> None:
+    await _post("/alerts/queue/clear")
+
+
 async def listen_decisions(
     on_decision: Callable[[str, str, str], Awaitable[None]],
     on_connect: Callable[[], Awaitable[None]] | None = None,

@@ -30,6 +30,7 @@ from couchd.platforms.twitch.components.project_commands import ProjectCommands
 from couchd.platforms.twitch.components.activity_commands import ActivityCommands
 from couchd.platforms.twitch.components.ad_commands import AdCommands
 from couchd.platforms.twitch.components.general_commands import GeneralCommands
+from couchd.platforms.twitch.components.alert_commands import AlertCommands
 from couchd.core.utils import get_active_session, get_overlay_stats
 
 if settings.SENTRY_DSN:
@@ -107,6 +108,7 @@ class TwitchBot(commands.Bot):
         await self.add_component(ActivityCommands())
         await self.add_component(AdCommands(self, self.ad_manager, self.youtube_client))
         await self.add_component(GeneralCommands(self, self.youtube_client))
+        await self.add_component(AlertCommands())
 
         # Subscribe to chat and stream lifecycle on startup (works after token is saved).
         # On first run this will fail gracefully — auth happens via event_oauth_authorized.
