@@ -85,6 +85,8 @@ class TwitchBot(commands.Bot):
                 moderation_read=True,
                 moderator_read_followers=True,
                 moderator_read_chatters=True,
+                # Emotes
+                user_read_emotes=True,
             ),
         )
         self.lc_client = LeetCodeClient()
@@ -174,15 +176,32 @@ class TwitchBot(commands.Bot):
         await self._push_emotes()
         await self._push_overlay_stats()
 
+    async def _fetch_owner_user_emotes(self) -> dict[str, str]:
+        """Fetch owner's personal emotes: limitedtime, rewards, hypetrain, prime, etc."""
+        _skip = {"subscriptions", "bitstier", "follower", "globals"}
+        try:
+            users = await self.fetch_users(ids=[int(settings.TWITCH_OWNER_ID)])
+            if not users:
+                return {}
+            result = {}
+            async for emote in users[0].fetch_user_emotes():
+                if emote.type not in _skip:
+                    result[emote.name] = f"https://static-cdn.jtvnw.net/emoticons/v2/{emote.id}/default/dark/2.0"
+            return result
+        except Exception:
+            log.error("Failed to fetch owner user emotes", exc_info=True)
+            return {}
+
     async def _push_emotes(self) -> None:
         try:
             channel_id = await self.twitch_client.get_user_id(settings.TWITCH_CHANNEL)
-            twitch_global, twitch_channel, third_party = await asyncio.gather(
+            twitch_global, twitch_channel, third_party, user_emotes = await asyncio.gather(
                 self.twitch_client.get_global_emotes(),
                 self.twitch_client.get_channel_emotes(channel_id or ""),
                 self.emote_client.fetch_all(settings.TWITCH_CHANNEL, channel_id or ""),
+                self._fetch_owner_user_emotes(),
             )
-            emotes = {**twitch_global, **twitch_channel, **third_party}
+            emotes = {**twitch_global, **twitch_channel, **third_party, **user_emotes}
             await veil.post_event("emotes.update", {"emote_map": emotes})
             log.info("Pushed %d emotes to veil.", len(emotes))
         except Exception:

@@ -11,6 +11,7 @@ services:
     image: boneless-couch
     volumes:
       - ./.env:/app/.env:ro
+      - ./.tio.tokens.json:/app/.tio.tokens.json
     command: python -m couchd.platforms.twitch.main
     ports:
       - "4343:4343"
