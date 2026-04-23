@@ -261,10 +261,14 @@ class TwitchBot(commands.Bot):
     def _build_bot_subscriptions(self) -> list:
         """Subscriptions that use the bot's user token."""
         owner = settings.TWITCH_OWNER_ID
+        bot = settings.TWITCH_BOT_ID
         return [
-            eventsub.ChatMessageSubscription(broadcaster_user_id=owner, user_id=settings.TWITCH_BOT_ID),
-            eventsub.ChatMessageDeleteSubscription(broadcaster_user_id=owner, user_id=settings.TWITCH_BOT_ID),
-            eventsub.ChatClearUserMessagesSubscription(broadcaster_user_id=owner, user_id=settings.TWITCH_BOT_ID),
+            eventsub.ChatMessageSubscription(broadcaster_user_id=owner, user_id=bot),
+            eventsub.ChatMessageDeleteSubscription(broadcaster_user_id=owner, user_id=bot),
+            eventsub.ChatClearUserMessagesSubscription(broadcaster_user_id=owner, user_id=bot),
+            eventsub.AutomodMessageHoldSubscription(broadcaster_user_id=owner, moderator_user_id=bot),
+            eventsub.AutomodMessageUpdateSubscription(broadcaster_user_id=owner, moderator_user_id=bot),
+            eventsub.ChannelFollowSubscription(broadcaster_user_id=owner, moderator_user_id=bot),
         ]
 
     def _build_owner_subscriptions(self) -> list:
@@ -279,9 +283,6 @@ class TwitchBot(commands.Bot):
             eventsub.ChannelCheerSubscription(broadcaster_user_id=owner),
             eventsub.ChannelRaidSubscription(to_broadcaster_user_id=owner),
             eventsub.ChannelPointsRedeemAddSubscription(broadcaster_user_id=owner),
-            eventsub.AutomodMessageHoldSubscription(broadcaster_user_id=owner, moderator_user_id=owner),
-            eventsub.AutomodMessageUpdateSubscription(broadcaster_user_id=owner, moderator_user_id=owner),
-            eventsub.ChannelFollowSubscription(broadcaster_user_id=owner, moderator_user_id=owner),
         ]
 
     async def event_message_delete(self, payload: twitchio.ChatMessageDelete) -> None:
