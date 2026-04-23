@@ -188,6 +188,15 @@ class TwitchBot(commands.Bot):
                 if emote.type not in _skip:
                     result[emote.name] = f"https://static-cdn.jtvnw.net/emoticons/v2/{emote.id}/default/dark/2.0"
             return result
+        except twitchio.HTTPException as e:
+            if "Missing scope: user:read:emotes" in str(e):
+                log.warning(
+                    "Owner token is missing the user:read:emotes scope — limited-time emotes will not be preloaded. "
+                    "Re-authorize the owner account by visiting the OAuth URL."
+                )
+            else:
+                log.error("Failed to fetch owner user emotes", exc_info=True)
+            return {}
         except Exception:
             log.error("Failed to fetch owner user emotes", exc_info=True)
             return {}
