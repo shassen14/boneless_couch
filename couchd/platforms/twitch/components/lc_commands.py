@@ -51,6 +51,10 @@ class LCCommands(commands.Component):
             "badges": [b.set_id for b in payload.badges],
             "message_id": payload.id,
             "platform": "twitch",
+            "fragments": [
+                {"type": f.type, "text": f.text, **({"id": f.emote.id} if f.emote else {})}
+                for f in payload.fragments
+            ],
         }
 
         if self.mod_engine.is_flagged(payload.text):
