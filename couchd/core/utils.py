@@ -2,7 +2,7 @@
 import asyncio
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, ViewerInteraction
@@ -58,19 +58,22 @@ async def get_overlay_stats() -> dict:
                 .order_by(ViewerInteraction.timestamp.desc()).limit(5)
             ),
             db.execute(
-                select(ViewerInteraction)
-                .where(
-                    (ViewerInteraction.interaction_type == InteractionType.RESUB)
-                    & (ViewerInteraction.cumulative_months != None)
+                select(
+                    ViewerInteraction.username,
+                    func.max(ViewerInteraction.display_name).label("display_name"),
+                    func.count().label("months"),
                 )
-                .order_by(ViewerInteraction.cumulative_months.desc()).limit(5)
+                .where(ViewerInteraction.interaction_type.in_([InteractionType.SUB, InteractionType.RESUB]))
+                .group_by(ViewerInteraction.username)
+                .order_by(func.count().desc())
+                .limit(5)
             ),
         )
         last_follow = last_follow_r.scalars().first()
         last_raid = last_raid_r.scalars().first()
         last_bits = last_bits_r.scalars().first()
         recent_subs = recent_subs_r.scalars().all()
-        longest_subs = longest_subs_r.scalars().all()
+        longest_subs = longest_subs_r.all()
 
     def _row(v: ViewerInteraction) -> dict:
         return {
@@ -86,5 +89,5 @@ async def get_overlay_stats() -> dict:
         "last_raider": _row(last_raid) if last_raid else {},
         "last_bits": _row(last_bits) if last_bits else {},
         "recent_subs": [_row(r) for r in recent_subs],
-        "longest_subs": [_row(r) for r in longest_subs],
+        "longest_subs": [{"username": r.username, "display_name": r.display_name, "cumulative_months": r.months} for r in longest_subs],
     }
