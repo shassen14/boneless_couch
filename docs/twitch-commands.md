@@ -28,6 +28,8 @@
 | `!task <detail>`   | Set the active micro-task                                                                       |
 | `!task done`       | Clear the active micro-task                                                                     |
 | `!ad [mins]`       | Run an ad — optional duration in minutes (e.g. `!ad 1.5` for 90s), defaults to remaining budget |
-| `!alerts on`       | Re-enable the alert overlay after it was turned off                                             |
-| `!alerts off`      | Disable alerts immediately — stops audio and clears any visible card                            |
-| `!alerts clear`    | Flush the alert queue and stop current audio without disabling future alerts                    |
+| `!alerts on`           | Re-enable the alert overlay after it was turned off                                             |
+| `!alerts off`          | Disable alerts immediately — stops audio and clears any visible card                            |
+| `!alerts audio on`     | Re-enable alert audio (visuals continue playing regardless)                                     |
+| `!alerts audio off`    | Mute alert audio — overlay animations still play, no sound                                      |
+| `!alerts clear`        | Flush the alert queue and stop current audio without disabling future alerts                    |

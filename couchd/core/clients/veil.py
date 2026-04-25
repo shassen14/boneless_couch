@@ -58,6 +58,14 @@ async def alerts_off() -> None:
     await _post("/alerts/off")
 
 
+async def alerts_audio_on() -> None:
+    await _post("/alerts/audio/on")
+
+
+async def alerts_audio_off() -> None:
+    await _post("/alerts/audio/off")
+
+
 async def clear_alert_queue() -> None:
     await _post("/alerts/queue/clear")
 

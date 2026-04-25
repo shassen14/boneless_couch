@@ -21,8 +21,18 @@ class AlertCommands(commands.Component):
         elif sub == "on":
             await veil.alerts_on()
             await ctx.reply("Alerts enabled.")
+        elif sub == "audio":
+            mode = args[2].lower() if len(args) > 2 else ""
+            if mode == "off":
+                await veil.alerts_audio_off()
+                await ctx.reply("Alert audio disabled.")
+            elif mode == "on":
+                await veil.alerts_audio_on()
+                await ctx.reply("Alert audio enabled.")
+            else:
+                await ctx.reply("Usage: !alerts audio on | off")
         elif sub == "clear":
             await veil.clear_alert_queue()
             await ctx.reply("Alert queue cleared.")
         else:
-            await ctx.reply("Usage: !alerts on | off | clear")
+            await ctx.reply("Usage: !alerts on | off | audio on | off | clear")
