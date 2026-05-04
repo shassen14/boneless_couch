@@ -21,6 +21,7 @@ services:
     image: boneless-couch
     volumes:
       - ./.env:/app/.env:ro
+      - ./client_secret.json:/app/client_secret.json:ro
       - ./.youtube_chat.tokens.pkl:/app/.youtube_chat.tokens.pkl
     command: python -m couchd.platforms.youtube.main
     restart: unless-stopped

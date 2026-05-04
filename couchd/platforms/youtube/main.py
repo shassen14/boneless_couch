@@ -17,8 +17,10 @@ from couchd.core.clients.youtube_chat import YouTubeChatClient
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
+from couchd.core.clients import veil
 from couchd.core.cooldowns import CooldownManager
 from couchd.core.moderation import ModerationEngine
+from couchd.core.constants import HoldSource
 from couchd.core.utils import get_active_session
 from couchd.platforms.youtube.components.lc_commands import LCCommands
 from couchd.platforms.youtube.components.general_commands import GeneralCommands
@@ -140,15 +142,30 @@ class YouTubeBot:
 
     async def _handle_chat_message(self, raw: dict, text: str) -> None:
         author_details = raw.get("authorDetails", {})
-        snippet = raw.get("snippet", {})
+        message_id = raw.get("id", "")
+        display_name = author_details.get("displayName", "")
 
-        # Check moderation patterns
+        log.info("[YT CHAT] %s: %s", display_name, text)
+
+        chat_payload = {
+            "username": display_name,
+            "display_name": display_name,
+            "channel_id": author_details.get("channelId", ""),
+            "message": text,
+            "message_id": message_id,
+            "platform": Platform.YOUTUBE.value,
+            "is_moderator": author_details.get("isChatModerator", False),
+            "is_owner": author_details.get("isChatOwner", False),
+        }
+
         if self.mod_engine.is_flagged(text):
-            log.info("[MOD] Flagged YouTube message from %s", author_details.get("displayName"))
+            self.mod_engine.add_pending(message_id, chat_payload, HoldSource.BONELESS_COUCH)
+            log.info("[MOD] Held YouTube message %s from %s", message_id, display_name)
+            await veil.post_event("modqueue.pending", {**chat_payload, "hold_sources": [HoldSource.BONELESS_COUCH]})
+            return
 
-        log.info("[YT CHAT] %s: %s", author_details.get("displayName"), text)
+        await veil.post_event("youtube.chat.message", chat_payload)
 
-        # Pass to lc_commands for solution URL detection
         for component in self._components:
             if hasattr(component, "on_message"):
                 try:
@@ -176,6 +193,17 @@ class YouTubeBot:
             except Exception:
                 log.error("Error in YouTube poll loop", exc_info=True)
                 await asyncio.sleep(10)
+
+    async def _on_modqueue_decision(self, message_id: str, decision: str, platform: str) -> None:
+        if platform != Platform.YOUTUBE.value:
+            return
+        pending = self.mod_engine.get(message_id)
+        if not pending:
+            return
+        if decision == "deny":
+            await self.chat_client.delete_message(message_id)
+            log.info("Deleted modqueue message %s from YouTube chat.", message_id)
+        self.mod_engine.pop(message_id)
 
     async def _broadcast_lifecycle_loop(self) -> None:
         """Polls for broadcast start/end and mirrors the Twitch pg_notify pattern."""
@@ -238,6 +266,7 @@ class YouTubeBot:
         await asyncio.gather(
             self._poll_loop(),
             self._broadcast_lifecycle_loop(),
+            veil.listen_decisions(self._on_modqueue_decision),
         )
 
 
