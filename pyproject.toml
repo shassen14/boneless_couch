@@ -7,9 +7,11 @@ name = "boneless-couch"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    # social media: discord, twitch
+    # social media: discord, twitch, youtube
     "py-cord[voice]",
     "twitchio[starlette]",
+    "google-auth-oauthlib",
+    "google-auth-httplib2",
     # configuration
     "python-dotenv",
     "pydantic",

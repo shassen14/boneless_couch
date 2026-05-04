@@ -93,6 +93,17 @@ class YouTubeConfig:
     VIDEO_URL = "https://www.youtube.com/watch?v="
 
 
+class YouTubeChatConfig:
+    API_BASE = "https://www.googleapis.com/youtube/v3"
+    SCOPES = [
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+        "https://www.googleapis.com/auth/youtube",
+    ]
+    DEFAULT_POLL_MS = 5000
+    BROADCAST_STATUS = "active"
+    MAX_RESULTS = 200
+
+
 @dataclass(frozen=True)
 class Cooldown:
     user_seconds: int  # how long before the same user can run it again

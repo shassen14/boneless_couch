@@ -16,3 +16,11 @@ services:
     ports:
       - "4343:4343"
     restart: unless-stopped
+
+  youtube:
+    image: boneless-couch
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./.youtube_chat.tokens.pkl:/app/.youtube_chat.tokens.pkl
+    command: python -m couchd.platforms.youtube.main
+    restart: unless-stopped

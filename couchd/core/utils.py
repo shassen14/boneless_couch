@@ -20,13 +20,13 @@ def compute_vod_timestamp(start_time: datetime) -> str:
     return f"{hours:02}h{minutes:02}m{seconds:02}s"
 
 
-async def get_active_session() -> StreamSession | None:
+async def get_active_session(platform: Platform = Platform.TWITCH) -> StreamSession | None:
     async with get_session() as db:
         result = await db.execute(
             select(StreamSession)
             .where(
                 (StreamSession.is_active == True)
-                & (StreamSession.platform == Platform.TWITCH.value)
+                & (StreamSession.platform == platform.value)
             )
             .order_by(StreamSession.start_time.desc())
         )

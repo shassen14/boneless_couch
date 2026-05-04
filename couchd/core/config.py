@@ -58,9 +58,13 @@ class Settings(BaseSettings):
     # Ad budget: how many minutes of ads are required per hour
     TWITCH_AD_MINUTES_PER_HOUR: int = 3
 
-    # YouTube (optional — omit to disable VideoWatcherCog)
+    # YouTube RSS (optional — omit to disable VideoWatcherCog)
     YOUTUBE_CHANNEL_ID: str | None = None
     YOUTUBE_POLL_RATE_MINUTES: float = 15.0
+
+    # YouTube Live Chat bot (optional — omit to disable YouTube bot)
+    YOUTUBE_CLIENT_SECRET_FILE: str | None = None
+    YOUTUBE_CHAT_TOKEN_FILE: str = ".youtube_chat.tokens.pkl"
 
     # LeetCode (optional — omit to disable streamer auto-submission detection)
     LEETCODE_USERNAME: str | None = None
