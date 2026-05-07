@@ -28,6 +28,8 @@ async def post_event(event_type: str, payload: dict) -> None:
                     log.warning("Veil POST %s → %d", event_type, resp.status)
                 else:
                     log.info("Veil POST %s → %d", event_type, resp.status)
+    except aiohttp.ClientConnectorError:
+        log.warning("Veil unreachable, dropping event %s", event_type)
     except Exception:
         log.warning("Veil POST error for %s", event_type, exc_info=True)
 
@@ -46,6 +48,8 @@ async def _post(path: str) -> None:
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 log.info("veil POST %s → %d", path, resp.status)
+    except aiohttp.ClientConnectorError:
+        log.warning("Veil unreachable, dropping %s", path)
     except Exception:
         log.warning("Veil POST error for %s", path, exc_info=True)
 
@@ -99,6 +103,8 @@ async def listen_decisions(
                                 )
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             break
+        except aiohttp.ClientConnectorError:
+            log.warning("Veil WS unreachable. Reconnecting in %ds.", delay)
         except Exception:
             log.warning("Veil WS disconnected. Reconnecting in %ds.", delay, exc_info=True)
         await asyncio.sleep(delay)
