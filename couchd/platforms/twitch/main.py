@@ -440,7 +440,7 @@ class TwitchBot(commands.Bot):
                 viewer_count=payload.viewer_count,
             ))
 
-    async def event_channel_follow(self, payload: twitchio.ChannelFollow) -> None:
+    async def event_follow(self, payload: twitchio.ChannelFollow) -> None:
         await veil.post_event("twitch.follower", {
             "username": payload.user.name,
             "display_name": payload.user.display_name,
