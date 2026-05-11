@@ -20,6 +20,7 @@ class InteractionType(str, Enum):
     GIFTBOMB  = "giftbomb"
     BITS      = "bits"
     RAID      = "raid"
+    TIP       = "tip"
 
 
 TASK_DONE = "done"

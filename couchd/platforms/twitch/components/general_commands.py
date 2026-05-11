@@ -4,6 +4,7 @@ from twitchio.ext import commands
 
 from couchd.core.db import get_session
 from couchd.core import socials
+from couchd.core.config import settings
 from couchd.core.models import StreamEvent, ClipLog, IdeaPost
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.constants import CommandCooldowns, ClipConfig
@@ -136,6 +137,42 @@ class GeneralCommands(commands.Component):
             return
         self.cooldowns.record("unlurk", ctx.author.id)
         await ctx.send(f"👀 {ctx.author.display_name} is back! Welcome back!")
+
+    @commands.command(name="so")
+    async def shoutout_command(self, ctx: commands.Context):
+        """!so <username> — give a manual shoutout (mod/broadcaster only)."""
+        if not ctx.author.broadcaster and not ctx.author.moderator:
+            return
+
+        args = ctx.content.split(maxsplit=1)
+        if len(args) < 2 or not args[1].strip():
+            await ctx.reply("Usage: !so <username>")
+            return
+
+        target_name = args[1].strip().lstrip("@")
+        try:
+            targets = await self.bot.fetch_users(names=[target_name])
+            if not targets:
+                await ctx.reply(f"Could not find user '{target_name}'.")
+                return
+            target = targets[0]
+
+            owners = await self.bot.fetch_users(ids=[int(settings.TWITCH_OWNER_ID)])
+            if owners:
+                await owners[0].send_shoutout(
+                    to_broadcaster=target,
+                    moderator=settings.TWITCH_BOT_ID,
+                )
+        except Exception:
+            log.error("Failed to send shoutout to %s", target_name, exc_info=True)
+            await ctx.reply(f"❌ Could not send shoutout to {target_name}.")
+            return
+
+        await ctx.send(
+            f"Go show some love to {target.display_name}! "
+            f"Check them out at https://twitch.tv/{target.name} !"
+        )
+        log.info("Shoutout sent to %s.", target.name)
 
     @commands.command(name="idea")
     async def idea_command(self, ctx: commands.Context):

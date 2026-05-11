@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     VEIL_URL: str | None = None
     VEIL_SECRET: str | None = None
 
+    # StreamElements (optional — omit to disable tip alerts)
+    STREAMELEMENTS_JWT: str | None = None
+
     # Moderation — JSON array of regex patterns, e.g. '["\\bbadword\\b"]'
     MODERATION_PATTERNS: list[str] = []
 

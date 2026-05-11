@@ -22,6 +22,7 @@ from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
 from couchd.core.clients import veil
+from couchd.core.clients import streamelements
 from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.scheduler import AdScheduler
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
@@ -41,6 +42,7 @@ from couchd.platforms.twitch.components.welcome_messages import (
     giftbomb_message,
     bits_message,
     raid_message,
+    tip_message,
 )
 
 if settings.SENTRY_DSN:
@@ -153,6 +155,7 @@ class TwitchBot(commands.Bot):
             self._on_modqueue_decision,
             on_connect=self._on_connect,
         ))
+        asyncio.create_task(streamelements.listen_tips(self._on_tip))
 
     async def _check_live_on_ready(self) -> None:
         """On startup, notify Discord if stream is already live (handles mid-stream restarts)."""
@@ -489,6 +492,34 @@ class TwitchBot(commands.Bot):
                 username=payload.user.name,
                 display_name=payload.user.display_name,
                 timestamp=payload.followed_at,
+            ))
+
+    async def _on_tip(self, data: dict) -> None:
+        username = data.get("username", "Anonymous")
+        amount = float(data.get("amount", 0))
+        currency = data.get("currency", "USD")
+        message = data.get("message", "")
+
+        log.info("Tip received: %s %.2f %s", username, amount, currency)
+        await veil.post_event("streamelements.tip", {
+            "username": username,
+            "amount": amount,
+            "currency": currency,
+            "message": message,
+        })
+        await send_chat_message(self, tip_message(username, amount, currency))
+        if message:
+            await send_chat_message(self, f"{username} says: {message}")
+
+        session = await get_active_session()
+        async with get_session() as db:
+            db.add(ViewerInteraction(
+                session_id=session.id if session else None,
+                interaction_type=InteractionType.TIP,
+                username=username.lower(),
+                display_name=username,
+                tip_amount=amount,
+                tip_currency=currency,
             ))
 
     async def event_custom_redemption_add(self, payload: twitchio.ChannelPointsRedemptionAdd) -> None:

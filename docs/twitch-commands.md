@@ -31,6 +31,7 @@
 | `!topic <subject>`  | Log the current just chatting topic                                                             |
 | `!task <detail>`    | Set the active micro-task                                                                       |
 | `!task done`        | Clear the active micro-task                                                                     |
+| `!so <username>`    | Send a Twitch shoutout + post channel link in chat (`@` prefix optional)                        |
 | `!ad [mins]`        | Run an ad — optional duration in minutes (e.g. `!ad 1.5` for 90s), defaults to remaining budget |
 | `!alerts on`        | Re-enable the alert overlay after it was turned off                                             |
 | `!alerts off`       | Disable alerts immediately — stops audio and clears any visible card                            |
@@ -40,29 +41,21 @@
 
 ## Chat Timers
 
-The bot automatically sends rotating promo messages every `CHAT_TIMER_INTERVAL_MINUTES` (default 20 min) during an active stream. Messages are only sent when the stream is live.
-
-| Message (when configured) | Social link used |
-| ------------------------- | ---------------- |
-| Discord community invite  | `SOCIAL_DISCORD` |
-| YouTube channel link      | `SOCIAL_YOUTUBE` |
-| GitHub projects link      | `SOCIAL_GITHUB`  |
-| Twitch follow reminder    | `SOCIAL_TWITCH`  |
-
-Messages rotate in order so each gets equal airtime over a long stream.
+The bot automatically sends rotating promo messages every `CHAT_TIMER_INTERVAL_MINUTES` (default 20 min) during an active stream. Messages are only sent when the stream is live. One message per social link configured in `SOCIAL_LINKS`.
 
 ## Automatic Bot Behaviors
 
 These fire without any command — the bot responds to Twitch events automatically.
 
-| Event             | Bot Response                                                                 |
-| ----------------- | ---------------------------------------------------------------------------- |
-| New follower      | Welcome message in chat (during active stream only)                          |
-| New subscriber    | Welcome message in chat                                                      |
-| Resub             | Acknowledgement with cumulative month count                                  |
-| Gift sub bomb     | Thank-you message naming the gifter and count                                |
-| Bits cheer        | Thank-you message with bit count                                             |
-| Raid (any size)   | Welcome message to raider and their viewers                                  |
-| Raid (5+ viewers) | Twitch shoutout sent automatically in addition to the welcome message        |
-| Ad break start    | Warning message 60s before auto-ads; return-time announcement when it starts |
-| Ad break end      | "We're back" message                                                         |
+| Event                | Bot Response                                                                 |
+| -------------------- | ---------------------------------------------------------------------------- |
+| New follower         | Welcome message in chat (during active stream only)                          |
+| New subscriber       | Welcome message in chat                                                      |
+| Resub                | Acknowledgement with cumulative month count                                  |
+| Gift sub bomb        | Thank-you message naming the gifter and count                                |
+| Bits cheer           | Thank-you message with bit count                                             |
+| Raid (any size)      | Welcome message to raider and their viewers                                  |
+| Raid (5+ viewers)    | Twitch shoutout sent automatically in addition to the welcome message        |
+| Tip (StreamElements) | Thank-you message with amount and currency; donor message posted if included |
+| Ad break start       | Warning message 60s before auto-ads; return-time announcement when it starts |
+| Ad break end         | "We're back" message                                                         |

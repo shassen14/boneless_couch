@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from sqlalchemy import (
     BigInteger,
+    Numeric,
     String,
     Boolean,
     DateTime,
@@ -198,6 +199,8 @@ class ViewerInteraction(Base):
     gift_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bits: Mapped[int | None] = mapped_column(Integer, nullable=True)
     viewer_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tip_amount: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    tip_currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     __table_args__ = (
         Index("ix_viewer_interactions_type_ts", "interaction_type", "timestamp"),

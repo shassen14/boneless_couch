@@ -44,6 +44,12 @@ _RAID_POOL = [
     "RAID ALERT! {raider} brought {count} people! Welcome welcome welcome 🛋️",
 ]
 
+_TIP_POOL = [
+    "{name} just tipped {amount} {currency}! That's incredibly generous, thank you! 💸",
+    "WOW! {name} dropped a {amount} {currency} tip! You're amazing 🙏",
+    "{name} sent a {amount} {currency} tip! Thank you so much for the support! 💛",
+]
+
 
 def follow_message(display_name: str) -> str:
     return random.choice(_FOLLOW_POOL).format(name=display_name)
@@ -67,3 +73,7 @@ def bits_message(display_name: str, bits: int) -> str:
 
 def raid_message(from_display_name: str, viewer_count: int) -> str:
     return random.choice(_RAID_POOL).format(raider=from_display_name, count=viewer_count)
+
+
+def tip_message(display_name: str, amount: float, currency: str) -> str:
+    return random.choice(_TIP_POOL).format(name=display_name, amount=f"{amount:.2f}", currency=currency)
