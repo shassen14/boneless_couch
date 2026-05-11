@@ -14,7 +14,7 @@ from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, ViewerInteraction
-from couchd.core.constants import ChatMetrics, HoldSource, InteractionType
+from couchd.core.constants import ChatMetrics, HoldSource, InteractionType, RaidConfig
 from couchd.core.moderation import ModerationEngine
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients.emotes import EmoteClient
@@ -32,6 +32,15 @@ from couchd.platforms.twitch.components.ad_commands import AdCommands
 from couchd.platforms.twitch.components.general_commands import GeneralCommands
 from couchd.platforms.twitch.components.alert_commands import AlertCommands
 from couchd.core.utils import get_active_session, get_overlay_stats
+from couchd.platforms.twitch.components.utils import send_chat_message
+from couchd.platforms.twitch.components.welcome_messages import (
+    follow_message,
+    sub_message,
+    resub_message,
+    giftbomb_message,
+    bits_message,
+    raid_message,
+)
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(dsn=settings.SENTRY_DSN)
@@ -356,6 +365,7 @@ class TwitchBot(commands.Bot):
             "tier": payload.tier,
             "is_gift": False,
         })
+        await send_chat_message(self, sub_message(payload.user.display_name, payload.tier))
         session = await get_active_session()
         async with get_session() as db:
             db.add(ViewerInteraction(
@@ -375,6 +385,7 @@ class TwitchBot(commands.Bot):
             "streak_months": payload.streak_months or 0,
             "message": payload.text,
         })
+        await send_chat_message(self, resub_message(payload.user.display_name, payload.cumulative_months, payload.tier))
         session = await get_active_session()
         async with get_session() as db:
             db.add(ViewerInteraction(
@@ -389,12 +400,14 @@ class TwitchBot(commands.Bot):
 
     async def event_subscription_gift(self, payload: twitchio.ChannelSubscriptionGift) -> None:
         gifter = payload.user
+        gifter_name = gifter.display_name if gifter else "Anonymous"
         await veil.post_event("twitch.giftbomb", {
             "gifter_username": gifter.name if gifter else "anonymous",
-            "gifter_display_name": gifter.display_name if gifter else "Anonymous",
+            "gifter_display_name": gifter_name,
             "count": payload.total,
             "tier": payload.tier,
         })
+        await send_chat_message(self, giftbomb_message(gifter_name, payload.total))
         session = await get_active_session()
         async with get_session() as db:
             db.add(ViewerInteraction(
@@ -408,12 +421,14 @@ class TwitchBot(commands.Bot):
 
     async def event_cheer(self, payload: twitchio.ChannelCheer) -> None:
         user = payload.user
+        display_name = user.display_name if user else "Anonymous"
         await veil.post_event("twitch.bits", {
             "username": user.name if user else "anonymous",
-            "display_name": user.display_name if user else "Anonymous",
+            "display_name": display_name,
             "bits": payload.bits,
             "message": payload.message,
         })
+        await send_chat_message(self, bits_message(display_name, payload.bits))
         session = await get_active_session()
         async with get_session() as db:
             db.add(ViewerInteraction(
@@ -424,12 +439,28 @@ class TwitchBot(commands.Bot):
                 bits=payload.bits,
             ))
 
+    async def _send_auto_shoutout(self, broadcaster: twitchio.PartialUser) -> None:
+        try:
+            users = await self.fetch_users(ids=[int(settings.TWITCH_OWNER_ID)])
+            if not users:
+                return
+            await users[0].send_shoutout(
+                to_broadcaster=broadcaster,
+                moderator=settings.TWITCH_BOT_ID,
+            )
+            log.info("Auto-shoutout sent to %s.", broadcaster.name)
+        except Exception:
+            log.error("Failed to send auto-shoutout to %s", broadcaster.name, exc_info=True)
+
     async def event_raid(self, payload: twitchio.ChannelRaid) -> None:
         await veil.post_event("twitch.raid", {
             "from_username": payload.from_broadcaster.name,
             "from_display_name": payload.from_broadcaster.display_name,
             "viewer_count": payload.viewer_count,
         })
+        await send_chat_message(self, raid_message(payload.from_broadcaster.display_name, payload.viewer_count))
+        if payload.viewer_count >= RaidConfig.SHOUTOUT_MIN_VIEWERS:
+            await self._send_auto_shoutout(payload.from_broadcaster)
         session = await get_active_session()
         async with get_session() as db:
             db.add(ViewerInteraction(
@@ -446,6 +477,8 @@ class TwitchBot(commands.Bot):
             "display_name": payload.user.display_name,
         })
         session = await get_active_session()
+        if session:
+            await send_chat_message(self, follow_message(payload.user.display_name))
         async with get_session() as db:
             db.add(ViewerInteraction(
                 session_id=session.id if session else None,

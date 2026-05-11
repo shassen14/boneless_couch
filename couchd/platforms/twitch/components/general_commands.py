@@ -100,6 +100,22 @@ class GeneralCommands(commands.Component):
         await ctx.reply(f"✂️ Clip created: {url}")
         log.info("Clip created: %s (%s)", title, url)
 
+    @commands.command(name="lurk")
+    async def lurk_command(self, ctx: commands.Context):
+        """!lurk — let chat know you're lurking."""
+        if self.cooldowns.check("lurk", ctx.author.id, CommandCooldowns.SIMPLE):
+            return
+        self.cooldowns.record("lurk", ctx.author.id)
+        await ctx.send(f"💤 {ctx.author.display_name} is lurking! Thanks for hanging out!")
+
+    @commands.command(name="unlurk")
+    async def unlurk_command(self, ctx: commands.Context):
+        """!unlurk — announce your return from lurk."""
+        if self.cooldowns.check("unlurk", ctx.author.id, CommandCooldowns.SIMPLE):
+            return
+        self.cooldowns.record("unlurk", ctx.author.id)
+        await ctx.send(f"👀 {ctx.author.display_name} is back! Welcome back!")
+
     @commands.command(name="idea")
     async def idea_command(self, ctx: commands.Context):
         """!idea <text> — submit a community idea."""

@@ -126,6 +126,10 @@ class ClipConfig:
     DEFAULT_TITLE = "No context provided. Just vibes. ✨"
 
 
+class RaidConfig:
+    SHOUTOUT_MIN_VIEWERS = 5
+
+
 class BotConfig:
     USER_AGENT = "BonelessCouchBot/1.0"
 
