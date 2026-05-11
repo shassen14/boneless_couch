@@ -266,7 +266,11 @@ class YouTubeBot:
             await asyncio.sleep(60)
 
     async def run(self) -> None:
-        await self.chat_client.authenticate()
+        try:
+            await self.chat_client.authenticate()
+        except RefreshError:
+            log.critical("YouTube OAuth token revoked — delete the token file and re-authenticate before restarting.")
+            return
         await self.lc_client.load_ratings()
         self._setup_components()
 

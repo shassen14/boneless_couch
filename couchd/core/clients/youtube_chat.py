@@ -43,8 +43,11 @@ class YouTubeChatClient:
                 try:
                     creds.refresh(Request())
                 except RefreshError:
-                    log.critical("YouTube OAuth token revoked — deleting stale token, re-authentication required.")
-                    self._token_file.unlink(missing_ok=True)
+                    log.critical("YouTube OAuth token revoked — re-authentication required.")
+                    try:
+                        self._token_file.unlink(missing_ok=True)
+                    except OSError:
+                        log.warning("Could not delete stale token file %s — delete it manually.", self._token_file)
                     raise
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(
