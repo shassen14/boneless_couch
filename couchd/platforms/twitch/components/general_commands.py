@@ -2,8 +2,8 @@
 import logging
 from twitchio.ext import commands
 
-from couchd.core.config import settings
 from couchd.core.db import get_session
+from couchd.core import socials
 from couchd.core.models import StreamEvent, ClipLog, IdeaPost
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.constants import CommandCooldowns, ClipConfig
@@ -99,6 +99,27 @@ class GeneralCommands(commands.Component):
 
         await ctx.reply(f"✂️ Clip created: {url}")
         log.info("Clip created: %s (%s)", title, url)
+
+    @commands.command(name="socials")
+    async def socials_command(self, ctx: commands.Context):
+        """!socials — show all social links."""
+        if self.cooldowns.check("socials", ctx.author.id, CommandCooldowns.SIMPLE):
+            return
+        self.cooldowns.record("socials", ctx.author.id)
+        msg = socials.format_for_chat()
+        await ctx.reply(msg if msg else "No socials configured yet.")
+
+    @commands.command(name="discord")
+    async def discord_command(self, ctx: commands.Context):
+        """!discord — show the Discord invite link."""
+        if self.cooldowns.check("discord", ctx.author.id, CommandCooldowns.SIMPLE):
+            return
+        self.cooldowns.record("discord", ctx.author.id)
+        url = socials.find_by_name("discord")
+        if not url:
+            await ctx.reply("No Discord link configured yet.")
+            return
+        await ctx.reply(f"Join the community on Discord! {url}")
 
     @commands.command(name="lurk")
     async def lurk_command(self, ctx: commands.Context):

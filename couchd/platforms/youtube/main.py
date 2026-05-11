@@ -27,6 +27,7 @@ from couchd.platforms.youtube.components.general_commands import GeneralCommands
 from couchd.platforms.youtube.components.activity_commands import ActivityCommands
 from couchd.platforms.youtube.components.project_commands import ProjectCommands
 from couchd.platforms.youtube.components.moderation import ModerationCommands
+from couchd.platforms.youtube.components.timers import ChatTimers
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(dsn=settings.SENTRY_DSN)
@@ -81,6 +82,7 @@ class YouTubeBot:
         self._components: list = []
         self._live_chat_id: str | None = None
         self._page_token: str | None = None
+        self.chat_timers = ChatTimers(self)
 
     def _setup_components(self):
         self._components = [
@@ -263,6 +265,7 @@ class YouTubeBot:
         log.info("YouTube Bot is ONLINE!")
         log.info("-" * 40)
 
+        self.chat_timers.start()
         await asyncio.gather(
             self._poll_loop(),
             self._broadcast_lifecycle_loop(),

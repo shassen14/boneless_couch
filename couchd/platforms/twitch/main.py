@@ -31,6 +31,7 @@ from couchd.platforms.twitch.components.activity_commands import ActivityCommand
 from couchd.platforms.twitch.components.ad_commands import AdCommands
 from couchd.platforms.twitch.components.general_commands import GeneralCommands
 from couchd.platforms.twitch.components.alert_commands import AlertCommands
+from couchd.platforms.twitch.components.timers import ChatTimers
 from couchd.core.utils import get_active_session, get_overlay_stats
 from couchd.platforms.twitch.components.utils import send_chat_message
 from couchd.platforms.twitch.components.welcome_messages import (
@@ -107,6 +108,7 @@ class TwitchBot(commands.Bot):
         self.emote_client = EmoteClient()
         self.youtube_client = YouTubeRSSClient() if settings.YOUTUBE_CHANNEL_ID else None
         self.ad_scheduler = AdScheduler(self, self.ad_manager, self.youtube_client)
+        self.chat_timers = ChatTimers(self)
         self.mod_engine = ModerationEngine(settings.MODERATION_PATTERNS)
 
     async def setup_hook(self) -> None:
@@ -144,6 +146,7 @@ class TwitchBot(commands.Bot):
         log.info(f"Using Bot ID:              {self.bot_id}")
         log.info("-" * 40)
         self.ad_scheduler.start()
+        self.chat_timers.start()
         asyncio.create_task(self._run_metrics_loop())
         asyncio.create_task(self._check_live_on_ready())
         asyncio.create_task(veil.listen_decisions(

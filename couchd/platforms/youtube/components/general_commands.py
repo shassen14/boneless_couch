@@ -2,6 +2,7 @@
 import logging
 
 from couchd.core.db import get_session
+from couchd.core import socials
 from couchd.core.models import IdeaPost
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.constants import CommandCooldowns, Platform
@@ -21,7 +22,7 @@ class GeneralCommands:
             return
         self.cooldowns.record("commands", ctx.author.id)
         await ctx.reply(
-            "Full command list: https://github.com/shassen14/boneless_couch/blob/main/docs/twitch-commands.md"
+            "Full command list: https://github.com/shassen14/boneless_couch/blob/main/docs/youtube-commands.md"
         )
 
     async def cmd_newvideo(self, ctx) -> None:
@@ -40,6 +41,25 @@ class GeneralCommands:
             return
 
         await ctx.reply(f"{video['title']} → {video['video_url']}")
+
+    async def cmd_socials(self, ctx) -> None:
+        """!socials — show all social links."""
+        if self.cooldowns.check("socials", ctx.author.id, CommandCooldowns.SIMPLE):
+            return
+        self.cooldowns.record("socials", ctx.author.id)
+        msg = socials.format_for_chat()
+        await ctx.reply(msg if msg else "No socials configured yet.")
+
+    async def cmd_discord(self, ctx) -> None:
+        """!discord — show the Discord invite link."""
+        if self.cooldowns.check("discord", ctx.author.id, CommandCooldowns.SIMPLE):
+            return
+        self.cooldowns.record("discord", ctx.author.id)
+        url = socials.find_by_name("discord")
+        if not url:
+            await ctx.reply("No Discord link configured yet.")
+            return
+        await ctx.reply(f"Join the community on Discord! {url}")
 
     async def cmd_idea(self, ctx) -> None:
         """!idea <text> — submit a community idea."""

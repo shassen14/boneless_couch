@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
+from couchd.core import socials
 from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog
 from couchd.core.constants import BrandColors
 from couchd.core.clients.youtube import YouTubeRSSClient
@@ -24,24 +25,11 @@ class CommunityCog(commands.Cog):
     )
     async def socials(self, ctx: discord.ApplicationContext):
         embed = discord.Embed(title="Socials", color=BrandColors.PRIMARY)
-
-        def _links(val: str) -> list[str]:
-            return [s.strip() for s in val.split(",") if s.strip()]
-
-        platforms = [
-            ("Twitch", _links(settings.SOCIAL_TWITCH)),
-            ("YouTube", _links(settings.SOCIAL_YOUTUBE)),
-            ("GitHub", _links(settings.SOCIAL_GITHUB)),
-        ]
-        any_configured = False
-        for name, links in platforms:
-            if links:
-                embed.add_field(name=name, value="\n".join(links), inline=False)
-                any_configured = True
-
-        if not any_configured:
+        links = socials.all_links()
+        for entry in links:
+            embed.add_field(name=entry["name"], value=entry["url"], inline=False)
+        if not links:
             embed.description = "No socials configured yet."
-
         await ctx.respond(embed=embed)
 
     @commands.slash_command(name="latest", description="Latest YouTube upload.")
