@@ -29,6 +29,7 @@ class GuildConfig(Base):
     clip_showcase_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     ideas_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     status_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    cf_problems_forum_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
 
 
 class StreamSession(Base):
@@ -82,6 +83,12 @@ class StreamEvent(Base):
     )
     clip_log: Mapped["ClipLog | None"] = relationship(
         "ClipLog",
+        back_populates="event",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    cf_problem_attempt: Mapped["CFProblemAttempt | None"] = relationship(
+        "CFProblemAttempt",
         back_populates="event",
         uselist=False,
         cascade="all, delete-orphan",
@@ -142,6 +149,38 @@ class ClipLog(Base):
     event: Mapped["StreamEvent"] = relationship(
         "StreamEvent", back_populates="clip_log"
     )
+
+
+class CFProblemAttempt(Base):
+    __tablename__ = "cf_problem_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    stream_event_id: Mapped[int] = mapped_column(
+        ForeignKey("stream_events.id"), nullable=False, unique=True
+    )
+    contest_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    index: Mapped[str] = mapped_column(String(10), nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tags: Mapped[str | None] = mapped_column(String, nullable=True)
+    vod_timestamp: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    event: Mapped["StreamEvent"] = relationship(
+        "StreamEvent", back_populates="cf_problem_attempt"
+    )
+
+    @property
+    def problem_id(self) -> str:
+        return f"{self.contest_id}{self.index}"
+
+
+class CFProblemPost(Base):
+    __tablename__ = "cf_problem_posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    problem_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    forum_thread_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class ProblemPost(Base):

@@ -13,6 +13,7 @@ from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession
 from couchd.core.constants import Platform
+from google.auth.exceptions import RefreshError
 from couchd.core.clients.youtube_chat import YouTubeChatClient
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
@@ -27,6 +28,7 @@ from couchd.platforms.youtube.components.general_commands import GeneralCommands
 from couchd.platforms.youtube.components.activity_commands import ActivityCommands
 from couchd.platforms.youtube.components.project_commands import ProjectCommands
 from couchd.platforms.youtube.components.moderation import ModerationCommands
+from couchd.platforms.youtube.components.cf_commands import CFCommands
 from couchd.platforms.youtube.components.timers import ChatTimers
 
 if settings.SENTRY_DSN:
@@ -91,6 +93,7 @@ class YouTubeBot:
             ActivityCommands(),
             ProjectCommands(self.github_client),
             ModerationCommands(self.chat_client),
+            CFCommands(),
         ]
 
     async def _get_or_refresh_chat_id(self) -> str | None:
@@ -192,6 +195,9 @@ class YouTubeBot:
                     await self._dispatch(msg)
 
                 await asyncio.sleep(poll_ms / 1000)
+            except RefreshError:
+                log.critical("YouTube OAuth token revoked — restart the bot after re-authenticating.")
+                await asyncio.sleep(3600)
             except Exception:
                 log.error("Error in YouTube poll loop", exc_info=True)
                 await asyncio.sleep(10)
@@ -251,6 +257,9 @@ class YouTubeBot:
                             )
                     was_live = False
 
+            except RefreshError:
+                log.critical("YouTube OAuth token revoked — restart the bot after re-authenticating.")
+                await asyncio.sleep(3600)
             except Exception:
                 log.error("Error in YouTube lifecycle loop", exc_info=True)
 

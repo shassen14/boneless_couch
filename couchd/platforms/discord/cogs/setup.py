@@ -159,6 +159,23 @@ class SetupCog(commands.Cog):
         )
 
     @setup_group.command(
+        name="cf_problems_forum",
+        description="Set the Codeforces problems archive forum.",
+    )
+    async def set_cf_problems_forum(
+        self,
+        ctx: discord.ApplicationContext,
+        channel: discord.Option(
+            discord.ForumChannel,
+            "Forum channel for Codeforces archives",
+            channel_types=[discord.ChannelType.forum],
+        ),
+    ):
+        await self._update_channel_config(
+            ctx, channel, "cf_problems_forum_id", "CF Problems Forum"
+        )
+
+    @setup_group.command(
         name="video_updates_role",
         description="Set the role to ping when a new video is posted.",
     )

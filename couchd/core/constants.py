@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 class EventType(str, Enum):
     PROBLEM_ATTEMPT = "problem_attempt"
+    CF_PROBLEM = "cf_problem"
     PROJECT = "project"
     GAME = "game"
     EDIT = "edit"
@@ -27,6 +28,7 @@ TASK_DONE = "done"
 
 MACRO_EVENT_TYPES = frozenset({
     EventType.PROBLEM_ATTEMPT,
+    EventType.CF_PROBLEM,
     EventType.PROJECT,
     EventType.GAME,
     EventType.EDIT,
@@ -133,6 +135,16 @@ class RaidConfig:
 
 class BotConfig:
     USER_AGENT = "BonelessCouchBot/1.0"
+
+
+class CFConfig:
+    BASE_URL = "https://codeforces.com"
+    API_BASE = "https://codeforces.com/api"
+
+
+class CFProblemsConfig:
+    POLL_RATE_MINUTES: float = 1.0
+    TITLE_MAX_LEN: int = 100
 
 
 class ProblemsConfig:

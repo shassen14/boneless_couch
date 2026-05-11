@@ -4,7 +4,7 @@ from twitchio.ext import commands
 from sqlalchemy import select
 
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog
+from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, CFProblemAttempt
 from couchd.core.constants import CommandCooldowns, MACRO_EVENT_TYPES, EventType, TASK_DONE
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
 from couchd.core.utils import get_active_session
@@ -69,6 +69,17 @@ class ActivityCommands(commands.Component):
             await ctx.reply("❌ Failed to save to DB.")
 
     async def _format_macro(self, db, event: StreamEvent) -> str:
+        if event.event_type == EventType.CF_PROBLEM:
+            cf = (
+                await db.execute(
+                    select(CFProblemAttempt).where(
+                        CFProblemAttempt.stream_event_id == event.id
+                    )
+                )
+            ).scalar_one_or_none()
+            return (
+                f"Solving [CF: {cf.title}]" if cf else "Solving [CF problem]"
+            )
         if event.event_type == EventType.PROBLEM_ATTEMPT:
             attempt = (
                 await db.execute(

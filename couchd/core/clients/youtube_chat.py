@@ -5,6 +5,7 @@ import pickle
 from pathlib import Path
 
 import aiohttp
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 
@@ -39,7 +40,12 @@ class YouTubeChatClient:
 
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
+                try:
+                    creds.refresh(Request())
+                except RefreshError:
+                    log.critical("YouTube OAuth token revoked — deleting stale token, re-authentication required.")
+                    self._token_file.unlink(missing_ok=True)
+                    raise
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(
                     str(self._secret_file), YouTubeChatConfig.SCOPES

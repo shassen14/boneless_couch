@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # LeetCode (optional — omit to disable streamer auto-submission detection)
     LEETCODE_USERNAME: str | None = None
 
+    # Codeforces (optional — omit to disable streamer auto-submission detection)
+    CODEFORCES_HANDLE: str | None = None
+
     # Social links — ordered list of {"name": "...", "url": "..."} dicts.
     # Add/remove/reorder entries here; no code changes needed.
     # Example: [{"name":"Twitch","url":"https://twitch.tv/..."},{"name":"TikTok","url":"https://tiktok.com/..."}]

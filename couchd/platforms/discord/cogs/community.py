@@ -8,7 +8,7 @@ from sqlalchemy import select
 from couchd.core.config import settings
 from couchd.core.db import get_session
 from couchd.core import socials
-from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog
+from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, CFProblemAttempt
 from couchd.core.constants import BrandColors
 from couchd.core.clients.youtube import YouTubeRSSClient
 
@@ -107,6 +107,39 @@ class CommunityCog(commands.Cog):
                 name="VOD Timestamp", value=f"`{attempt.vod_timestamp}`", inline=True
             )
 
+        await ctx.followup.send(embed=embed)
+
+
+    @commands.slash_command(
+        name="cf", description="Most recent Codeforces problem from the last stream."
+    )
+    async def cf(self, ctx: discord.ApplicationContext):
+        await ctx.defer()
+        async with get_session() as session:
+            attempt = (
+                await session.execute(
+                    select(CFProblemAttempt)
+                    .join(StreamEvent)
+                    .order_by(StreamEvent.timestamp.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+
+        if attempt is None:
+            await ctx.followup.send("No Codeforces problem has been logged yet.")
+            return
+
+        embed = discord.Embed(
+            title=attempt.title, url=attempt.url, color=BrandColors.PRIMARY
+        )
+        if attempt.rating is not None:
+            embed.add_field(name="Rating", value=str(attempt.rating), inline=True)
+        if attempt.tags:
+            embed.add_field(name="Tags", value=attempt.tags, inline=True)
+        if attempt.vod_timestamp:
+            embed.add_field(
+                name="VOD Timestamp", value=f"`{attempt.vod_timestamp}`", inline=True
+            )
         await ctx.followup.send(embed=embed)
 
 

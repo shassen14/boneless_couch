@@ -7,7 +7,7 @@ import discord
 from sqlalchemy import select
 
 from couchd.core.db import get_session
-from couchd.core.models import StreamSession, ProblemAttempt, ProjectLog, StreamEvent
+from couchd.core.models import StreamSession, ProblemAttempt, ProjectLog, StreamEvent, CFProblemAttempt
 from couchd.core.constants import StreamDefaults, BrandColors, MACRO_EVENT_TYPES, EventType, TASK_DONE
 
 log = logging.getLogger(__name__)
@@ -46,6 +46,19 @@ def _task_lines(tasks: list[tuple[str, str | None]]) -> str:
             line += f" `{ts}`"
         parts.append(f"\n{line}")
     return "".join(parts)
+
+
+def _render_cf(seg: _Segment) -> str:
+    a = seg.detail
+    if a is None:
+        return "- Unknown problem" + _task_lines(seg.tasks)
+    text = f"[{a.title}]({a.url})" if a.url else a.title
+    if a.rating is not None:
+        text += f" · {a.rating}"
+    ts = a.vod_timestamp or seg.time_str
+    if ts:
+        text += f" · `{ts}`"
+    return f"- {text}" + _task_lines(seg.tasks)
 
 
 def _render_lc(seg: _Segment) -> str:
@@ -109,6 +122,16 @@ async def post_stream_recap(stream_session: StreamSession, channel):
                 )
             ).scalars().all()
         }
+        cf_attempts_by_event = {
+            a.stream_event_id: a
+            for a in (
+                await db.execute(
+                    select(CFProblemAttempt)
+                    .join(StreamEvent)
+                    .where(StreamEvent.session_id == stream_session.id)
+                )
+            ).scalars().all()
+        }
         projects_by_event = {
             p.stream_event_id: p
             for p in (
@@ -125,7 +148,11 @@ async def post_stream_recap(stream_session: StreamSession, channel):
     for event in all_events:
         time_str = _format_elapsed(event.timestamp, start) if start else None
         if event.event_type in MACRO_EVENT_TYPES:
-            detail = attempts_by_event.get(event.id) or projects_by_event.get(event.id)
+            detail = (
+                attempts_by_event.get(event.id)
+                or cf_attempts_by_event.get(event.id)
+                or projects_by_event.get(event.id)
+            )
             segments.append(_Segment(event.event_type, event.notes, detail, time_str))
         elif event.event_type == EventType.TASK and event.notes and event.notes.lower() != TASK_DONE:
             if segments:
@@ -145,6 +172,10 @@ async def post_stream_recap(stream_session: StreamSession, channel):
     embed.add_field(name="Duration", value=_duration_str(stream_session), inline=True)
     if stream_session.peak_viewers is not None:
         embed.add_field(name="Peak Viewers", value=str(stream_session.peak_viewers), inline=True)
+
+    if EventType.CF_PROBLEM in by_type:
+        segs = by_type[EventType.CF_PROBLEM]
+        _add_field(embed, f"Codeforces ({len(segs)} attempted)", segs, _render_cf)
 
     if EventType.PROBLEM_ATTEMPT in by_type:
         segs = by_type[EventType.PROBLEM_ATTEMPT]
