@@ -96,15 +96,6 @@ class YouTubeBot:
             CFCommands(),
         ]
 
-    async def _get_or_refresh_chat_id(self) -> str | None:
-        chat_id = await self.chat_client.get_live_chat_id()
-        if chat_id != self._live_chat_id:
-            if chat_id:
-                log.info("Live chat ID: %s", chat_id)
-            self._live_chat_id = chat_id
-            self._page_token = None
-        return self._live_chat_id
-
     async def _dispatch(self, raw: dict) -> None:
         snippet = raw.get("snippet", {})
         author_details = raw.get("authorDetails", {})
@@ -181,7 +172,7 @@ class YouTubeBot:
     async def _poll_loop(self) -> None:
         while True:
             try:
-                live_chat_id = await self._get_or_refresh_chat_id()
+                live_chat_id = self._live_chat_id
                 if not live_chat_id:
                     await asyncio.sleep(30)
                     continue
@@ -194,6 +185,7 @@ class YouTubeBot:
                 for msg in messages:
                     await self._dispatch(msg)
 
+                poll_ms = max(poll_ms, settings.YOUTUBE_POLL_INTERVAL_MIN_MS)
                 await asyncio.sleep(poll_ms / 1000)
             except RefreshError:
                 log.critical("YouTube OAuth token revoked — restart the bot after re-authenticating.")
@@ -222,7 +214,9 @@ class YouTubeBot:
                 is_live = chat_id is not None
 
                 if is_live and not was_live:
-                    log.info("YouTube broadcast started.")
+                    log.info("YouTube broadcast started. Live chat ID: %s", chat_id)
+                    self._live_chat_id = chat_id
+                    self._page_token = None
                     async with get_session() as db:
                         existing = await get_active_session(Platform.YOUTUBE)
                         if not existing:
@@ -239,6 +233,8 @@ class YouTubeBot:
 
                 elif not is_live and was_live:
                     log.info("YouTube broadcast ended.")
+                    self._live_chat_id = None
+                    self._page_token = None
                     async with get_session() as db:
                         from sqlalchemy import select
                         result = await db.execute(

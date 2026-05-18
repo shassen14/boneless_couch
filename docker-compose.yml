@@ -17,11 +17,13 @@ services:
       - "4343:4343"
     restart: unless-stopped
 
-  youtube:
-    image: boneless-couch
-    volumes:
-      - ./.env:/app/.env:ro
-      - ./client_secret.json:/app/client_secret.json:ro
-      - ./.youtube_chat.tokens.pkl:/app/.youtube_chat.tokens.pkl
-    command: python -m couchd.platforms.youtube.main
-    restart: unless-stopped
+  # YouTube bot disabled until a quota increase is approved — default 10k units/day
+  # is exhausted in ~1h of streaming. Re-enable after the increase lands.
+  # youtube:
+  #   image: boneless-couch
+  #   volumes:
+  #     - ./.env:/app/.env:ro
+  #     - ./client_secret.json:/app/client_secret.json:ro
+  #     - ./.youtube_chat.tokens.pkl:/app/.youtube_chat.tokens.pkl
+  #   command: python -m couchd.platforms.youtube.main
+  #   restart: unless-stopped

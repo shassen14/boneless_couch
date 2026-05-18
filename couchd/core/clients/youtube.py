@@ -23,6 +23,33 @@ class YouTubeRSSClient:
 
     def __init__(self):
         self.channel_id = settings.YOUTUBE_CHANNEL_ID
+        self.api_key = settings.YOUTUBE_API_KEY
+
+    async def is_livestream(self, video_id: str) -> bool | None:
+        """Return True if the video is a live or upcoming broadcast, False if a normal
+        upload, or None if it can't be determined (no API key, error, or video missing).
+
+        Uses videos.list?part=snippet — 1 quota unit per call.
+        """
+        if not self.api_key or not video_id:
+            return None
+        url = "https://www.googleapis.com/youtube/v3/videos"
+        params = {"part": "snippet", "id": video_id, "key": self.api_key}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as resp:
+                    if resp.status != 200:
+                        log.warning("videos.list HTTP %s for %s", resp.status, video_id)
+                        return None
+                    data = await resp.json()
+            items = data.get("items", [])
+            if not items:
+                return None
+            content = items[0].get("snippet", {}).get("liveBroadcastContent", "none")
+            return content in ("live", "upcoming")
+        except Exception:
+            log.error("is_livestream failed for %s", video_id, exc_info=True)
+            return None
 
     async def get_latest_video(self) -> dict | None:
         """

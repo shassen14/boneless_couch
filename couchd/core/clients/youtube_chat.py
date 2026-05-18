@@ -14,6 +14,12 @@ from couchd.core.constants import YouTubeChatConfig
 log = logging.getLogger(__name__)
 
 
+class YouTubeAPIError(Exception):
+    def __init__(self, status: int, body: str = ""):
+        super().__init__(f"YouTube API HTTP {status}: {body[:200]}")
+        self.status = status
+
+
 class YouTubeChatClient:
     """
     Async client for YouTube Live Chat API (Data API v3).
@@ -77,7 +83,12 @@ class YouTubeChatClient:
     # ------------------------------------------------------------------
 
     async def get_live_chat_id(self) -> str | None:
-        """Return the liveChatId for the currently active broadcast, or None."""
+        """Return liveChatId for the active broadcast, or None if no active broadcast.
+
+        Raises YouTubeAPIError on HTTP failures so callers don't confuse "no broadcast"
+        with "API hiccup" — the latter would otherwise reset the poll page token and
+        re-dispatch chat history.
+        """
         await self._ensure_creds()
         url = f"{YouTubeChatConfig.API_BASE}/liveBroadcasts"
         params = {
@@ -92,7 +103,11 @@ class YouTubeChatClient:
                     self._creds = None
                     await self._ensure_creds()
                     async with session.get(url, headers=self._headers(), params=params) as retry:
+                        if retry.status != 200:
+                            raise YouTubeAPIError(retry.status, await retry.text())
                         data = await retry.json()
+                elif resp.status != 200:
+                    raise YouTubeAPIError(resp.status, await resp.text())
                 else:
                     data = await resp.json()
 

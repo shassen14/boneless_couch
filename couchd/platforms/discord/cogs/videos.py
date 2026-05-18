@@ -47,6 +47,12 @@ class VideoWatcherCog(commands.Cog):
         if video_id == self.last_seen_video_id:
             return
 
+        is_live = await self.youtube.is_livestream(video_id)
+        if is_live:
+            log.info(f"Skipping livestream entry {video_id} — not announcing as upload.")
+            self.last_seen_video_id = video_id
+            return
+
         log.info(f"New YouTube video detected: {video_id}")
         self.last_seen_video_id = video_id
         await self._announce_video(video)

@@ -61,10 +61,17 @@ class Settings(BaseSettings):
     # YouTube RSS (optional — omit to disable VideoWatcherCog)
     YOUTUBE_CHANNEL_ID: str | None = None
     YOUTUBE_POLL_RATE_MINUTES: float = 15.0
+    # API key for read-only Data API checks (e.g. liveBroadcastContent filter on new
+    # uploads). Optional — without it, livestream broadcasts may be announced as uploads.
+    YOUTUBE_API_KEY: str | None = None
 
     # YouTube Live Chat bot (optional — omit to disable YouTube bot)
     YOUTUBE_CLIENT_SECRET_FILE: str | None = None
     YOUTUBE_CHAT_TOKEN_FILE: str = ".youtube_chat.tokens.pkl"
+    # Floor on liveChatMessages.list polling interval. The YouTube API recommends
+    # ~2-5s, which burns daily quota (10k units / 5 per call ≈ 1h of streaming).
+    # Raising this stretches quota at the cost of reply latency.
+    YOUTUBE_POLL_INTERVAL_MIN_MS: int = 10000
 
     # LeetCode (optional — omit to disable streamer auto-submission detection)
     LEETCODE_USERNAME: str | None = None
@@ -78,7 +85,7 @@ class Settings(BaseSettings):
     SOCIAL_LINKS: list[dict[str, str]] = []
 
     # Chat timer interval: how often periodic promo messages are sent (minutes)
-    CHAT_TIMER_INTERVAL_MINUTES: float = 20.0
+    CHAT_TIMER_INTERVAL_MINUTES: float = 45.0
 
     # Observability (optional)
     SENTRY_DSN: str | None = None
