@@ -14,7 +14,7 @@ from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, ViewerInteraction
-from couchd.core.constants import ChatMetrics, HoldSource, InteractionType, RaidConfig
+from couchd.core.constants import ChatMetrics, HoldSource, InteractionType, RaidConfig, TwitchBotConfig
 from couchd.core.moderation import ModerationEngine
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients.emotes import EmoteClient
@@ -152,6 +152,7 @@ class TwitchBot(commands.Bot):
         self.ad_scheduler.start()
         self.chat_timers.start()
         asyncio.create_task(self._run_metrics_loop())
+        asyncio.create_task(self._run_subscription_health_check())
         asyncio.create_task(self._check_live_on_ready())
         asyncio.create_task(veil.listen_decisions(
             self._on_modqueue_decision,
@@ -558,6 +559,31 @@ class TwitchBot(commands.Bot):
         if isinstance(payload.exception, CommandNotFound):
             return
         log.error("Command error: %s", payload.exception, exc_info=payload.exception)
+
+    async def _run_subscription_health_check(self) -> None:
+        owner = settings.TWITCH_OWNER_ID
+        tagged = [(s, None) for s in self._build_bot_subscriptions()] + [
+            (s, owner) for s in self._build_owner_subscriptions()
+        ]
+        while True:
+            await asyncio.sleep(TwitchBotConfig.SUBSCRIPTION_HEALTH_CHECK_SECONDS)
+            failed = 0
+            for sub, token_for in tagged:
+                try:
+                    await self.subscribe_websocket(payload=sub, token_for=token_for)
+                except twitchio.HTTPException as e:
+                    if e.status == 409:
+                        pass  # already active, healthy
+                    else:
+                        failed += 1
+                        log.warning("Health check resubscribe failed for %s: %s", sub.__class__.__name__, e)
+                except Exception as e:
+                    failed += 1
+                    log.warning("Health check resubscribe failed for %s: %s", sub.__class__.__name__, e)
+            if failed:
+                log.error("Subscription health check: %d/%d failed to resubscribe.", failed, len(tagged))
+            else:
+                log.debug("Subscription health check: all %d subscriptions OK.", len(tagged))
 
     async def _run_metrics_loop(self) -> None:
         """Periodically update peak viewer count and log high-velocity chat."""

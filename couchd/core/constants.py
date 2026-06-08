@@ -170,6 +170,10 @@ class HoldSource:
     TWITCH_AUTOMOD = "twitch_automod"
 
 
+class TwitchBotConfig:
+    SUBSCRIPTION_HEALTH_CHECK_SECONDS: int = 300
+
+
 class BrandColors:
     # Use discord.Color objects for easy integration with Embeds
     PRIMARY = discord.Color.brand_green()
