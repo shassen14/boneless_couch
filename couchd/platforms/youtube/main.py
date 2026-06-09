@@ -124,7 +124,10 @@ class YouTubeBot:
             _live_chat_id=self._live_chat_id,
         )
 
-        parts = text[len(COMMAND_PREFIX):].split(maxsplit=1)
+        await self._run_command(ctx)
+
+    async def _run_command(self, ctx: "YouTubeChatContext") -> None:
+        parts = ctx.content[len(COMMAND_PREFIX):].split(maxsplit=1)
         cmd_name = parts[0].lower() if parts else ""
 
         for component in self._components:
@@ -205,6 +208,28 @@ class YouTubeBot:
             log.info("Deleted modqueue message %s from YouTube chat.", message_id)
         self.mod_engine.pop(message_id)
 
+    async def _on_chat_send(self, text: str, targets: list[str]) -> None:
+        """Send a cockpit-typed message / run a command on YouTube live chat."""
+        text = text.strip()
+        if Platform.YOUTUBE.value not in targets or not text:
+            return
+        if not self._live_chat_id:
+            log.info("Cockpit send ignored — no active YouTube live chat.")
+            return
+        if text.startswith(COMMAND_PREFIX):
+            ctx = YouTubeChatContext(
+                author=YouTubeAuthor(
+                    id=settings.YOUTUBE_CHANNEL_ID or "cockpit",
+                    name="streamer", display_name="streamer",
+                    is_moderator=True, is_owner=True,
+                ),
+                content=text, message_id="cockpit",
+                _client=self.chat_client, _live_chat_id=self._live_chat_id,
+            )
+            await self._run_command(ctx)
+        else:
+            await self.chat_client.send_message(self._live_chat_id, text)
+
     async def _broadcast_lifecycle_loop(self) -> None:
         """Polls for broadcast start/end and mirrors the Twitch pg_notify pattern."""
         was_live = False
@@ -278,7 +303,7 @@ class YouTubeBot:
         await asyncio.gather(
             self._poll_loop(),
             self._broadcast_lifecycle_loop(),
-            veil.listen_decisions(self._on_modqueue_decision),
+            veil.listen_decisions(self._on_modqueue_decision, on_chat_send=self._on_chat_send),
         )
 
 

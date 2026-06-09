@@ -36,6 +36,7 @@ from couchd.platforms.twitch.components.cf_commands import CFCommands
 from couchd.platforms.twitch.components.timers import ChatTimers
 from couchd.core.utils import get_active_session, get_overlay_stats
 from couchd.platforms.twitch.components.utils import send_chat_message
+from couchd.platforms.twitch.components import cockpit
 from couchd.platforms.twitch.components.welcome_messages import (
     follow_message,
     sub_message,
@@ -157,6 +158,7 @@ class TwitchBot(commands.Bot):
         asyncio.create_task(veil.listen_decisions(
             self._on_modqueue_decision,
             on_connect=self._on_connect,
+            on_chat_send=self._on_chat_send,
         ))
         asyncio.create_task(streamelements.listen_tips(self._on_tip))
 
@@ -364,6 +366,11 @@ class TwitchBot(commands.Bot):
             except Exception:
                 log.error("Failed to call Twitch AutoMod API for %s", message_id, exc_info=True)
         self.mod_engine.pop(message_id)
+
+    async def _on_chat_send(self, text: str, targets: list[str]) -> None:
+        """Send a cockpit-typed message / run a command on Twitch chat."""
+        if "twitch" in targets:
+            await cockpit.handle_send(self, text)
 
     async def event_subscription(self, payload: twitchio.ChannelSubscribe) -> None:
         if payload.gift:

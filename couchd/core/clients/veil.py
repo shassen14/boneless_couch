@@ -77,8 +77,13 @@ async def clear_alert_queue() -> None:
 async def listen_decisions(
     on_decision: Callable[[str, str, str], Awaitable[None]],
     on_connect: Callable[[], Awaitable[None]] | None = None,
+    on_chat_send: Callable[[str, list[str]], Awaitable[None]] | None = None,
 ) -> None:
-    """Connect to veil WS and call on_decision(message_id, decision, platform) for modqueue decisions."""
+    """Connect to veil WS and react to streamer actions pushed from the cockpit.
+
+    on_decision(message_id, decision, platform) — modqueue approve/reject.
+    on_chat_send(text, targets)               — send a message / run a command.
+    """
     if not settings.VEIL_URL:
         return
     ws_url = settings.VEIL_URL.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
@@ -87,20 +92,22 @@ async def listen_decisions(
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.ws_connect(ws_url) as ws:
-                    log.info("Connected to veil WS for modqueue decisions.")
+                    log.info("Connected to veil WS for cockpit actions.")
                     delay = 1
                     if on_connect:
                         await on_connect()
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = msg.json()
+                            d = data.get("data", {})
                             if data.get("type") == "modqueue.decision":
-                                d = data.get("data", {})
                                 await on_decision(
                                     d.get("message_id", ""),
                                     d.get("decision", ""),
                                     d.get("platform", "twitch"),
                                 )
+                            elif data.get("type") == "chat.send.request" and on_chat_send:
+                                await on_chat_send(d.get("text", ""), d.get("targets", []))
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             break
         except aiohttp.ClientConnectorError:
