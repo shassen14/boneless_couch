@@ -37,11 +37,7 @@ class LCCommands(commands.Component):
 
     @commands.Component.listener()
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
-        if payload.chatter.id == settings.TWITCH_BOT_ID:
-            return
-        log.info(f"[CHAT] {payload.chatter.name}: {payload.text}")
-        self.metrics_tracker.record_message()
-        await self._check_solution_url(payload)
+        is_bot = payload.chatter.id == settings.TWITCH_BOT_ID
 
         chat_payload = {
             "username": payload.chatter.name,
@@ -51,11 +47,23 @@ class LCCommands(commands.Component):
             "badges": [b.set_id for b in payload.badges],
             "message_id": payload.id,
             "platform": "twitch",
+            "is_bot": is_bot,
             "fragments": [
                 {"type": f.type, "text": f.text, **({"id": f.emote.id} if f.emote else {})}
                 for f in payload.fragments
             ],
         }
+
+        # The bot's own output (command replies, alerts, cockpit sends) is echoed
+        # to the cockpit reader so the streamer sees that commands worked. It skips
+        # metrics, solution scanning, and moderation, and the overlay filters it out.
+        if is_bot:
+            await veil.post_event("twitch.chat.message", chat_payload)
+            return
+
+        log.info(f"[CHAT] {payload.chatter.name}: {payload.text}")
+        self.metrics_tracker.record_message()
+        await self._check_solution_url(payload)
 
         if self.mod_engine.is_flagged(payload.text):
             self.mod_engine.add_pending(payload.id, chat_payload, HoldSource.BONELESS_COUCH)
