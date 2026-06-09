@@ -10,6 +10,18 @@ import urllib.request
 from couchd.core.constants import BotConfig
 
 
+class SuppressNoiseFilter(logging.Filter):
+    """Drops benign, expected log records so they never reach the console or webhook."""
+
+    def __init__(self, substrings: tuple[str, ...]):
+        super().__init__()
+        self._substrings = substrings
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return not any(s in message for s in self._substrings)
+
+
 class DiscordWebhookHandler(logging.Handler):
     """
     Fires an HTTP POST to a Discord webhook on ERROR or CRITICAL log records.
@@ -61,7 +73,7 @@ class DiscordWebhookHandler(logging.Handler):
             with urllib.request.urlopen(req, timeout=5):
                 pass
         except Exception:
-            self.handleError(record)  # prints to stderr; visible in docker compose logs
+            pass  # best-effort alerting; a failed/rate-limited POST must not spam stderr
 
 
 def setup_logging(
@@ -80,9 +92,14 @@ def setup_logging(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+    # Drop benign, expected noise (e.g. twitchio EventSub re-subscribe errors) before
+    # it reaches any handler — keeps the console clean and prevents webhook 429 floods.
+    noise_filter = SuppressNoiseFilter(BotConfig.SUPPRESSED_LOG_SUBSTRINGS)
+
     # 2. Set up the Console Handler (prints to terminal)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(noise_filter)
 
     # 3. Configure the Root Logger
     root_logger = logging.getLogger()
@@ -94,7 +111,9 @@ def setup_logging(
 
     # 4. Attach Discord webhook handler for ERROR/CRITICAL if configured
     if webhook_url:
-        root_logger.addHandler(DiscordWebhookHandler(webhook_url, bot_name))
+        webhook_handler = DiscordWebhookHandler(webhook_url, bot_name)
+        webhook_handler.addFilter(noise_filter)
+        root_logger.addHandler(webhook_handler)
 
     # 5. Silence noisy third-party libraries
     logging.getLogger("discord.gateway").setLevel(logging.WARNING)

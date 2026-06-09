@@ -6,8 +6,9 @@ Twitch chat. Plain text is sent as the bot. A command is dispatched straight
 into its registered callback with a synthetic, broadcaster-level context — the
 bot ignores its own chat, so re-sending wouldn't trigger anything.
 
-Commands that need real twitchio API objects (ads, shoutouts, clips) can't run
-through a synthetic context, so they're refused with a chat notice.
+Cockpit input is trusted as broadcaster/moderator-level, so commands gated on
+those privileges run unconditionally. Commands that read `ctx.channel` (e.g.
+`!ad`) get the real broadcaster PartialUser fetched from the bot.
 """
 import logging
 from dataclasses import dataclass
@@ -18,8 +19,6 @@ from couchd.platforms.twitch.components.utils import send_chat_message
 log = logging.getLogger(__name__)
 
 COMMAND_PREFIX = "!"
-# Need a real broadcaster/PartialUser from twitchio — not available off-chat.
-UNSUPPORTED_COMMANDS = {"ad", "so", "clip"}
 
 
 @dataclass
@@ -44,6 +43,7 @@ class _CockpitContext:
     content: str
     author: _CockpitAuthor
     _bot: object
+    channel: object = None  # real broadcaster PartialUser, for ctx.channel users
 
     async def reply(self, text: str) -> None:
         await send_chat_message(self._bot, text)
@@ -63,19 +63,21 @@ async def handle_send(bot, text: str) -> None:
         return
 
     cmd_name = text[len(COMMAND_PREFIX):].split(maxsplit=1)[0].lower()
-    if cmd_name in UNSUPPORTED_COMMANDS:
-        await send_chat_message(bot, f"⚠️ !{cmd_name} can't be run from the cockpit — use Twitch chat.")
-        return
-
     command = bot.get_command(cmd_name)
     if command is None:
         log.info("Cockpit command !%s is not a known Twitch command.", cmd_name)
         return
 
+    channel = None
+    users = await bot.fetch_users(logins=[settings.TWITCH_CHANNEL])
+    if users:
+        channel = users[0]
+
     ctx = _CockpitContext(
         content=text,
         author=_CockpitAuthor(id=settings.TWITCH_OWNER_ID),
         _bot=bot,
+        channel=channel,
     )
     try:
         await command.callback(command.component, ctx)

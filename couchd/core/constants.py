@@ -135,6 +135,10 @@ class RaidConfig:
 
 class BotConfig:
     USER_AGENT = "BonelessCouchBot/1.0"
+    # twitchio re-subscribes to EventSub topics that still exist server-side after a
+    # reconnect/restart; it logs these at ERROR and disregards them. Benign noise —
+    # drop them so they never spam the console or flood the Discord webhook (429s).
+    SUPPRESSED_LOG_SUBSTRINGS = ("A subscription already exists",)
 
 
 class CFConfig:
