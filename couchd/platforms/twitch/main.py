@@ -14,7 +14,7 @@ from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, ViewerInteraction
-from couchd.core.constants import ChatMetrics, HoldSource, InteractionType, RaidConfig, TwitchBotConfig
+from couchd.core.constants import ChatMetrics, HoldSource, InteractionType, RaidConfig, StreamDefaults, TwitchBotConfig
 from couchd.core.moderation import ModerationEngine
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients.emotes import EmoteClient
@@ -245,9 +245,14 @@ class TwitchBot(commands.Bot):
         self.ad_scheduler.fire_opener()
 
         stream_data = await self.twitch_client.get_stream_status(settings.TWITCH_CHANNEL)
+        title = (stream_data.get("title") if stream_data else "") or StreamDefaults.TITLE.value
+        category = (stream_data.get("game_name") if stream_data else "") or StreamDefaults.CATEGORY.value
+        await send_chat_message(
+            self, TwitchBotConfig.STREAM_OPENER_MESSAGE.format(title=title, category=category)
+        )
         notify_payload = json.dumps({
-            "title": stream_data.get("title", "") if stream_data else "",
-            "category": stream_data.get("game_name", "") if stream_data else "",
+            "title": title,
+            "category": category,
             "thumbnail_url": stream_data.get("thumbnail_url", "") if stream_data else "",
         })
         async with get_session() as db:

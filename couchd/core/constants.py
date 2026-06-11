@@ -46,6 +46,12 @@ class StreamDefaults(str, Enum):
     CATEGORY = "Just Chatting"
 
 
+class StreamStatusEmbed:
+    LIVE_HEADING = "🔴 Live"
+    RECAP_HEADING = "Stream Recap"
+    LIVE_PLACEHOLDER = "Activity will appear here as the stream goes on."
+
+
 class TwitchConfig:
     THUMBNAIL_WIDTH = "1280"
     THUMBNAIL_HEIGHT = "720"
@@ -176,6 +182,7 @@ class HoldSource:
 
 class TwitchBotConfig:
     SUBSCRIPTION_HEALTH_CHECK_SECONDS: int = 300
+    STREAM_OPENER_MESSAGE: str = "🔴 Now live: {title} — Playing {category}"
 
 
 class BrandColors:

@@ -1,14 +1,21 @@
 # couchd/platforms/discord/components/streams_recap.py
 import logging
 from dataclasses import dataclass, field as dc_field
-from datetime import datetime
+from datetime import datetime, timezone
 
 import discord
 from sqlalchemy import select
 
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, ProblemAttempt, ProjectLog, StreamEvent, CFProblemAttempt
-from couchd.core.constants import StreamDefaults, BrandColors, MACRO_EVENT_TYPES, EventType, TASK_DONE
+from couchd.core.constants import (
+    StreamDefaults,
+    StreamStatusEmbed,
+    BrandColors,
+    MACRO_EVENT_TYPES,
+    EventType,
+    TASK_DONE,
+)
 
 log = logging.getLogger(__name__)
 
@@ -23,9 +30,10 @@ class _Segment:
 
 
 def _duration_str(session: StreamSession) -> str:
-    if not session.start_time or not session.end_time:
+    if not session.start_time:
         return "Unknown"
-    total_seconds = int((session.end_time - session.start_time).total_seconds())
+    end = session.end_time or datetime.now(timezone.utc)
+    total_seconds = int((end - session.start_time).total_seconds())
     hours, remainder = divmod(total_seconds, 3600)
     minutes, _ = divmod(remainder, 60)
     return f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
@@ -102,7 +110,7 @@ def _add_field(embed: discord.Embed, name: str, segs: list[_Segment], renderer) 
     embed.add_field(name=name, value=value, inline=False)
 
 
-async def post_stream_recap(stream_session: StreamSession, channel):
+async def build_stream_embed(stream_session: StreamSession, heading: str) -> discord.Embed:
     async with get_session() as db:
         all_events = (
             await db.execute(
@@ -165,7 +173,7 @@ async def post_stream_recap(stream_session: StreamSession, channel):
     title = stream_session.title or StreamDefaults.TITLE.value
     category = stream_session.category or StreamDefaults.CATEGORY.value
     embed = discord.Embed(
-        title="Stream Recap",
+        title=heading,
         description=f"**{title}**\nPlaying: {category}",
         color=BrandColors.TWITCH,
     )
@@ -193,23 +201,52 @@ async def post_stream_recap(stream_session: StreamSession, channel):
     if EventType.GAME in by_type:
         _add_field(embed, "Gaming", by_type[EventType.GAME], _render_simple)
 
-    target = channel
+    return embed
+
+
+async def render_stream_status(
+    stream_session: StreamSession, channel, *, final: bool
+) -> int | None:
+    """Edit the single in-thread status message in place.
+
+    Used for both live activity updates (final=False) and the closing recap
+    (final=True). On the final render the go-live message indicator is greyed
+    out. Returns the id of a newly created status message when one had to be
+    sent (so the caller can persist it), otherwise None.
+    """
+    heading = StreamStatusEmbed.RECAP_HEADING if final else StreamStatusEmbed.LIVE_HEADING
+    embed = await build_stream_embed(stream_session, heading)
+
+    thread = None
     if stream_session.discord_notification_message_id:
         try:
             live_msg = await channel.fetch_message(
                 stream_session.discord_notification_message_id
             )
-            if live_msg.embeds:
+            if final and live_msg.embeds:
                 updated = live_msg.embeds[0].copy()
-                updated.title = (updated.title or "").replace("🟢", "🔴")
+                updated.title = (updated.title or "").replace("🔴", "⚫")
                 await live_msg.edit(embed=updated)
-            if live_msg.thread:
-                target = live_msg.thread
+            thread = live_msg.thread
         except Exception:
-            log.warning("Could not fetch go-live message/thread; posting recap to channel.")
+            log.warning("Could not fetch go-live message/thread for status update.")
+
+    target = thread or channel
+
+    if stream_session.discord_live_status_message_id:
+        try:
+            status_msg = await target.fetch_message(
+                stream_session.discord_live_status_message_id
+            )
+            await status_msg.edit(embed=embed)
+            return None
+        except Exception:
+            log.warning("Live status message missing; sending a fresh one.")
 
     try:
-        await target.send(embed=embed)
-        log.info("Sent stream recap to %s.", getattr(target, "name", str(target.id)))
+        new_msg = await target.send(embed=embed)
+        log.info("Sent stream status to %s.", getattr(target, "name", str(target.id)))
+        return new_msg.id
     except Exception as e:
-        log.error("Failed to send stream recap embed", exc_info=e)
+        log.error("Failed to send stream status embed", exc_info=e)
+        return None
