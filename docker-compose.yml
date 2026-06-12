@@ -6,6 +6,9 @@ services:
       - ./.env:/app/.env:ro
     command: python -m couchd.platforms.discord.main
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
 
   twitch:
     image: boneless-couch
@@ -16,6 +19,9 @@ services:
     ports:
       - "4343:4343"
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
 
   # YouTube bot disabled until a quota increase is approved — default 10k units/day
   # is exhausted in ~1h of streaming. Re-enable after the increase lands.
