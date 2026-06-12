@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import aiohttp
 from datetime import datetime, timezone
 import twitchio
 from twitchio import eventsub
@@ -633,6 +634,8 @@ class TwitchBot(commands.Bot):
                         rate,
                         viewer_count,
                     )
+            except aiohttp.ClientError:
+                log.warning("Metrics poll skipped: Twitch API unreachable (transient network error).")
             except Exception:
                 log.error("Error in metrics loop", exc_info=True)
 
