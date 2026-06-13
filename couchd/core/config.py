@@ -105,6 +105,16 @@ class Settings(BaseSettings):
     # Disabled until py-cord ships a stable fix for Discord voice protocol (close code 4017).
     VOICE_SPEAKING_ENABLED: bool = False
 
+    # content_os read API server (optional — omit API_SECRET to disable the server).
+    # Exposes session/marker/recap data so content_os can scaffold VOD edit projects.
+    API_HOST: str = "0.0.0.0"
+    API_PORT: int = 4344
+    API_SECRET: str | None = None  # shared bearer token; None → API server does not start
+
+    # Outbound notifications to content_os (optional — omit URL to disable).
+    CONTENT_OS_API_URL: str | None = None  # e.g. http://pi.local:8000
+    CONTENT_OS_API_SECRET: str | None = None  # bearer token for outbound calls
+
 
 # Create a single, importable instance of our settings.
 # This instance will be created only once when the module is first imported.

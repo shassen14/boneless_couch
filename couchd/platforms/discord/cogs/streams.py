@@ -14,6 +14,7 @@ from couchd.core.models import StreamSession, GuildConfig
 from couchd.core.constants import Platform, StreamDefaults, StreamStatusEmbed, TwitchConfig, BrandColors
 from couchd.core.utils import get_active_session
 from couchd.core.clients.twitch import TwitchClient
+from couchd.core.clients import content_os as content_os_client
 from sqlalchemy import select
 from couchd.platforms.discord.components.streams_recap import render_stream_status
 
@@ -267,9 +268,15 @@ class StreamWatcherCog(commands.Cog):
                 if stream_session is None:
                     log.warning("handle_stream_end: session not found (id=%s).", session_id)
                     return
+                ended_session_id = stream_session.id
         except Exception as e:
             log.error("Failed to fetch StreamSession for recap", exc_info=e)
             return
+
+        # Signal content_os the session is available to scaffold (no-op unless
+        # configured). Fired before the Discord branch so a missing stream
+        # channel never costs the content_os handoff. Best-effort; never raises.
+        await content_os_client.notify_session_end(ended_session_id)
 
         discord_channel = await self._get_stream_channel()
         if discord_channel is None:
