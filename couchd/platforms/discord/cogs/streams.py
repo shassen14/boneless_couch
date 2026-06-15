@@ -15,7 +15,7 @@ from couchd.core.constants import Platform, StreamDefaults, StreamStatusEmbed, T
 from couchd.core.utils import get_active_session
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients import content_os as content_os_client
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from couchd.platforms.discord.components.streams_recap import render_stream_status
 

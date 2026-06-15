@@ -113,3 +113,52 @@ async def test_get_clip_non_200_returns_none(client):
         result = await client.get_clip("clip123")
 
     assert result is None
+
+
+# ── get_stream_status_when_ready (propagation tolerance) ───────────────────────
+
+async def test_when_ready_returns_immediately_when_title_present(client):
+    live = {"type": "live", "title": "Real Title", "game_name": "Software"}
+    client.get_stream_status = AsyncMock(return_value=live)
+
+    with patch("couchd.core.clients.twitch.asyncio.sleep", AsyncMock()) as sleep:
+        result = await client.get_stream_status_when_ready("teststreamer")
+
+    assert result == live
+    sleep.assert_not_called()  # no waiting when data is already there
+
+
+async def test_when_ready_polls_until_title_propagates(client):
+    live = {"type": "live", "title": "Real Title"}
+    # First poll: stream not in Helix yet. Second: live but title still empty.
+    # Third: fully propagated.
+    client.get_stream_status = AsyncMock(side_effect=[None, {"title": ""}, live])
+
+    with patch("couchd.core.clients.twitch.asyncio.sleep", AsyncMock()) as sleep:
+        result = await client.get_stream_status_when_ready("teststreamer")
+
+    assert result == live
+    assert sleep.await_count == 2  # slept after the two unready polls
+
+
+async def test_when_ready_tolerates_transient_errors(client):
+    import aiohttp
+
+    live = {"type": "live", "title": "Real Title"}
+    client.get_stream_status = AsyncMock(side_effect=[aiohttp.ClientError(), live])
+
+    with patch("couchd.core.clients.twitch.asyncio.sleep", AsyncMock()):
+        result = await client.get_stream_status_when_ready("teststreamer")
+
+    assert result == live
+
+
+async def test_when_ready_returns_last_seen_after_budget_exhausted(client):
+    titleless = {"type": "live", "title": ""}
+    client.get_stream_status = AsyncMock(return_value=titleless)
+
+    with patch("couchd.core.clients.twitch.asyncio.sleep", AsyncMock()):
+        result = await client.get_stream_status_when_ready("teststreamer")
+
+    # Never got a title, but returns the best payload it saw rather than None.
+    assert result == titleless
