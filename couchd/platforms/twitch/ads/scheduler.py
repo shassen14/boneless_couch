@@ -34,14 +34,14 @@ class AdScheduler:
         if self._ad_manager.has_pending():
             return
         log.info("Scheduling opening ad.")
-        self._ad_manager._pending_task = asyncio.create_task(
+        self._ad_manager.set_pending(asyncio.create_task(
             self._warn_then_ad(
                 None,
-                self._ad_manager._required_seconds,
+                self._ad_manager.required_seconds,
                 warn=False,
                 initial_delay=AdConfig.OPENER_DELAY_SECONDS,
             )
-        )
+        ))
 
     async def _run_loop(self) -> None:
         await asyncio.sleep(AdConfig.MIN_STREAM_AGE_SECONDS)
@@ -52,9 +52,9 @@ class AdScheduler:
             last_ad = await self._ad_manager.get_last_ad_time(session.id)
             if last_ad is None:
                 log.info("Ad scheduler: no ad yet this session (fallback opener) — scheduling now.")
-                self._ad_manager._pending_task = asyncio.create_task(
-                    self._warn_then_ad(session, self._ad_manager._required_seconds)
-                )
+                self._ad_manager.set_pending(asyncio.create_task(
+                    self._warn_then_ad(session, self._ad_manager.required_seconds)
+                ))
 
         while True:
             await asyncio.sleep(60)
@@ -68,10 +68,7 @@ class AdScheduler:
                     continue
 
                 # Fire when enough time has passed that the full budget has nearly accumulated.
-                # Window is 3600 + req (Twitch 60-min cooldown starts after ad ends).
-                req = self._ad_manager._required_seconds
-                window = self._ad_manager.window_seconds
-                fire_threshold = req * window / (window + req)
+                fire_threshold = self._ad_manager.fire_threshold
                 if remaining < fire_threshold:
                     continue
 
@@ -81,9 +78,9 @@ class AdScheduler:
                     fire_threshold,
                     remaining,
                 )
-                self._ad_manager._pending_task = asyncio.create_task(
-                    self._warn_then_ad(session, self._ad_manager._required_seconds)
-                )
+                self._ad_manager.set_pending(asyncio.create_task(
+                    self._warn_then_ad(session, self._ad_manager.required_seconds)
+                ))
             except Exception:
                 log.error("Error in ad scheduler loop", exc_info=True)
 

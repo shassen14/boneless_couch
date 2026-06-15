@@ -19,6 +19,25 @@ def test_window_includes_post_ad_cooldown(manager):
     assert manager.window_seconds == 3600 + 180
 
 
+def test_required_seconds_property(manager):
+    assert manager.required_seconds == 180
+
+
+def test_fire_threshold_below_full_budget_and_matches_formula(manager):
+    # Threshold is the budget level once nearly the whole window has elapsed,
+    # so it must be just under the full budget.
+    req, window = 180, 3780
+    assert manager.fire_threshold == pytest.approx(req * window / (window + req))
+    assert manager.fire_threshold < manager.required_seconds
+
+
+def test_set_pending_tracks_task(manager):
+    task = MagicMock()
+    task.done.return_value = False
+    manager.set_pending(task)
+    assert manager.has_pending() is True
+
+
 # ── get_remaining accumulation math ───────────────────────────────────────────
 
 async def test_remaining_full_after_full_window(manager):

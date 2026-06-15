@@ -25,6 +25,20 @@ class AdBudgetManager:
     def window_seconds(self) -> int:
         return self._window_seconds
 
+    @property
+    def required_seconds(self) -> int:
+        return self._required_seconds
+
+    @property
+    def fire_threshold(self) -> float:
+        """Remaining-budget level at which the auto-scheduler should fire an ad.
+
+        The full budget accrues over the window (3600 + ad_duration), so the
+        scheduler waits until nearly the whole budget has accumulated before
+        firing — this is the budget level at that point.
+        """
+        return self._required_seconds * self._window_seconds / (self._window_seconds + self._required_seconds)
+
     async def get_remaining(self, session_id: int, session_start: datetime) -> int:
         """
         Ad seconds accumulated since the last ad (or stream start), capped at the hourly budget.
@@ -67,6 +81,10 @@ class AdBudgetManager:
             ))
             await db.commit()
         log.info("Logged ad event: %ds at %s", duration_seconds, vod_timestamp)
+
+    def set_pending(self, task: asyncio.Task) -> None:
+        """Track a newly scheduled auto-ad task."""
+        self._pending_task = task
 
     def cancel_pending(self) -> None:
         """Cancel the scheduled auto-ad task if one is waiting."""
