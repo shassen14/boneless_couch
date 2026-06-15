@@ -115,6 +115,9 @@ class TwitchBot(commands.Bot):
         self.ad_scheduler = AdScheduler(self, self.ad_manager, self.youtube_client)
         self.chat_timers = ChatTimers(self)
         self.mod_engine = ModerationEngine(settings.MODERATION_PATTERNS)
+        # Coalesces overlapping resubscribe passes: pruning closes sockets, which
+        # re-dispatches websocket_closed, which would otherwise re-enter resubscribe.
+        self._resubscribing = False
 
     async def setup_hook(self) -> None:
         await self.lc_client.load_ratings()
@@ -577,30 +580,78 @@ class TwitchBot(commands.Bot):
             return
         log.error("Command error: %s", payload.exception, exc_info=payload.exception)
 
-    async def _run_subscription_health_check(self) -> None:
-        owner = settings.TWITCH_OWNER_ID
-        tagged = [(s, None) for s in self._build_bot_subscriptions()] + [
-            (s, owner) for s in self._build_owner_subscriptions()
+    async def _prune_dead_eventsub_sockets(self) -> int:
+        """Close eventsub websockets whose connection has died so the next subscribe
+        builds a fresh session. Recovers from the Twitch 400 'websocket transport
+        session does not exist' that twitchio's auto-reconnect can fail to clear —
+        otherwise every resubscribe reuses the dead session_id and fails forever.
+        ``Websocket.close()`` self-removes the socket from the client registry."""
+        dead = [
+            ws
+            for sockets in self._websockets.values()
+            for ws in list(sockets.values())
+            if not ws.connected
         ]
-        while True:
-            await asyncio.sleep(TwitchBotConfig.SUBSCRIPTION_HEALTH_CHECK_SECONDS)
-            failed = 0
+        for ws in dead:
+            await ws.close()
+        return len(dead)
+
+    async def _resubscribe_all(self) -> tuple[list[str], int]:
+        """Prune dead sockets, then (re)subscribe every eventsub subscription.
+        Pruning first forces a fresh session instead of reusing a stale, disconnected
+        session_id. Idempotent: twitchio swallows the 409 already-subscribed response,
+        so healthy subs are no-ops. Returns (failure descriptions, total attempted).
+        A pass already in flight coalesces this call to a no-op."""
+        if self._resubscribing:
+            return [], 0
+        self._resubscribing = True
+        try:
+            pruned = await self._prune_dead_eventsub_sockets()
+            if pruned:
+                log.warning("Closed %d dead eventsub socket(s); rebuilding.", pruned)
+            owner = settings.TWITCH_OWNER_ID
+            tagged = [(s, None) for s in self._build_bot_subscriptions()] + [
+                (s, owner) for s in self._build_owner_subscriptions()
+            ]
+            failures: list[str] = []
             for sub, token_for in tagged:
                 try:
                     await self.subscribe_websocket(payload=sub, token_for=token_for)
-                except twitchio.HTTPException as e:
-                    if e.status == 409:
-                        pass  # already active, healthy
-                    else:
-                        failed += 1
-                        log.warning("Health check resubscribe failed for %s: %s", sub.__class__.__name__, e)
                 except Exception as e:
-                    failed += 1
-                    log.warning("Health check resubscribe failed for %s: %s", sub.__class__.__name__, e)
-            if failed:
-                log.error("Subscription health check: %d/%d failed to resubscribe.", failed, len(tagged))
+                    failures.append(f"{sub.__class__.__name__}: {e}")
+            return failures, len(tagged)
+        finally:
+            self._resubscribing = False
+
+    async def event_websocket_closed(self, payload) -> None:
+        """Fast-path recovery: an eventsub socket closed terminally (Twitch 4001/4003
+        or revocation), so its subscriptions are gone — rebuild immediately instead of
+        waiting up to a full health-check interval. Skipped during bot shutdown, where
+        the client closes every socket on purpose."""
+        if self._has_closed:
+            return
+        log.warning("Eventsub websocket closed (session=%s) — rebuilding subscriptions.",
+                    payload.socket.session_id)
+        failures, total = await self._resubscribe_all()
+        if failures:
+            log.error("Resubscribe after websocket close: %d/%d failed:\n%s",
+                      len(failures), total, "\n".join(failures))
+        else:
+            log.info("Resubscribe after websocket close: all %d subscriptions OK.", total)
+
+    async def _run_subscription_health_check(self) -> None:
+        while True:
+            await asyncio.sleep(TwitchBotConfig.SUBSCRIPTION_HEALTH_CHECK_SECONDS)
+            # The ERROR is the only level that reaches the webhook, so embed the
+            # actual reasons to keep the alert actionable.
+            failures, total = await self._resubscribe_all()
+            if failures:
+                log.error(
+                    "Subscription health check: %d/%d failed to resubscribe:\n%s",
+                    len(failures), total, "\n".join(failures),
+                )
             else:
-                log.debug("Subscription health check: all %d subscriptions OK.", len(tagged))
+                log.debug("Subscription health check: all %d subscriptions OK.", total)
 
     async def _run_metrics_loop(self) -> None:
         """Periodically update peak viewer count and log high-velocity chat."""
