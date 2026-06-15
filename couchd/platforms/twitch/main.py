@@ -242,10 +242,14 @@ class TwitchBot(commands.Bot):
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         if payload.type != "live":
             return
-        log.info("Stream online (started_at=%s) — scheduling opener ad.", payload.started_at)
+        log.info("Stream online (started_at=%s) — waiting for stream data to propagate.", payload.started_at)
+
+        # Wait until Helix confirms live + returns a real title (handles the
+        # propagation lag after stream.online). Only then do we announce and run
+        # the opener ad — both are unreliable until Twitch registers the stream.
+        stream_data = await self.twitch_client.get_stream_status_when_ready(settings.TWITCH_CHANNEL)
         self.ad_scheduler.fire_opener()
 
-        stream_data = await self.twitch_client.get_stream_status(settings.TWITCH_CHANNEL)
         title = (stream_data.get("title") if stream_data else "") or StreamDefaults.TITLE.value
         category = (stream_data.get("game_name") if stream_data else "") or StreamDefaults.CATEGORY.value
         await send_chat_message(

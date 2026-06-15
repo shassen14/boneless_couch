@@ -87,6 +87,25 @@ class AdScheduler:
             except Exception:
                 log.error("Error in ad scheduler loop", exc_info=True)
 
+    async def _start_commercial_with_retry(self, channel_user, length: int) -> bool:
+        """Twitch can reject start_commercial right after go-live (channel not
+        yet registered as live). Retry a few times before giving up."""
+        for attempt in range(AdConfig.COMMERCIAL_RETRY_ATTEMPTS):
+            try:
+                await channel_user.start_commercial(length=length)
+                return True
+            except Exception as e:
+                log.warning(
+                    "start_commercial failed (attempt %d/%d): %s",
+                    attempt + 1,
+                    AdConfig.COMMERCIAL_RETRY_ATTEMPTS,
+                    e,
+                )
+                if attempt + 1 < AdConfig.COMMERCIAL_RETRY_ATTEMPTS:
+                    await asyncio.sleep(AdConfig.COMMERCIAL_RETRY_DELAY_SECONDS)
+        log.error("start_commercial: giving up after %d attempts.", AdConfig.COMMERCIAL_RETRY_ATTEMPTS)
+        return False
+
     async def _warn_then_ad(self, session: StreamSession | None, duration_seconds: int, *, warn: bool = True, initial_delay: int = 0) -> None:
         """Optionally warn chat, then fire the ad and send the standard 3-message sequence."""
         try:
@@ -109,7 +128,8 @@ class AdScheduler:
             if not users:
                 log.warning("_warn_then_ad: could not fetch channel user to start commercial.")
                 return
-            await users[0].start_commercial(length=clamped)
+            if not await self._start_commercial_with_retry(users[0], clamped):
+                return
 
             if session is None:
                 session = await get_active_session()

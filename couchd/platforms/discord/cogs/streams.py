@@ -16,6 +16,7 @@ from couchd.core.utils import get_active_session
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients import content_os as content_os_client
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from couchd.platforms.discord.components.streams_recap import render_stream_status
 
 log = logging.getLogger(__name__)
@@ -151,25 +152,37 @@ class StreamWatcherCog(commands.Cog):
             TwitchConfig.THUMBNAIL_PLACEHOLDER_W, TwitchConfig.THUMBNAIL_WIDTH
         ).replace(TwitchConfig.THUMBNAIL_PLACEHOLDER_H, TwitchConfig.THUMBNAIL_HEIGHT)
 
-        # Guard against duplicate (bot restart mid-stream or duplicate notify)
+        # Atomically claim this go-live. The partial unique index on
+        # (platform) WHERE is_active makes the INSERT the single source of
+        # truth: concurrent/duplicate notifies lose the conflict and get no id
+        # back, so only one invocation ever posts to Discord. This closes the
+        # check-then-act race that previously caused double go-live posts.
         try:
             async with get_session() as session:
-                existing = (
+                new_id = (
                     await session.execute(
-                        select(StreamSession)
-                        .where(
-                            (StreamSession.is_active == True)
-                            & (StreamSession.platform == Platform.TWITCH.value)
+                        pg_insert(StreamSession)
+                        .values(
+                            platform=Platform.TWITCH.value,
+                            title=title,
+                            category=category,
+                            is_active=True,
                         )
-                        .order_by(StreamSession.start_time.desc())
+                        .on_conflict_do_nothing(
+                            index_elements=[StreamSession.platform],
+                            index_where=text("is_active"),
+                        )
+                        .returning(StreamSession.id)
                     )
-                ).scalars().first()
-                if existing is not None:
-                    log.info("Active StreamSession already exists; skipping creation.")
-                    return
+                ).scalar_one_or_none()
         except Exception as e:
-            log.error("Failed to check existing StreamSession", exc_info=e)
+            log.error("Failed to claim StreamSession", exc_info=e)
             return
+
+        if new_id is None:
+            log.info("Active StreamSession already exists; skipping go-live announcement.")
+            return
+        log.info("Claimed StreamSession id=%d.", new_id)
 
         # Post go-live embed + seed the in-thread live status message
         message_id = None
@@ -209,22 +222,16 @@ class StreamWatcherCog(commands.Cog):
         except Exception as e:
             log.error("Failed to send Discord announcement", exc_info=e)
 
-        # Save session
+        # Attach the Discord message ids to the claimed session row.
         try:
             async with get_session() as session:
-                session.add(
-                    StreamSession(
-                        platform=Platform.TWITCH.value,
-                        title=title,
-                        category=category,
-                        is_active=True,
-                        discord_notification_message_id=message_id,
-                        discord_live_status_message_id=live_status_id,
-                    )
-                )
-            log.info("Created StreamSession in DB (message_id=%s).", message_id)
+                row = await session.get(StreamSession, new_id)
+                if row:
+                    row.discord_notification_message_id = message_id
+                    row.discord_live_status_message_id = live_status_id
+            log.info("Updated StreamSession id=%d (message_id=%s).", new_id, message_id)
         except Exception as e:
-            log.error("Failed to create StreamSession in DB", exc_info=e)
+            log.error("Failed to update StreamSession with message ids", exc_info=e)
 
     async def handle_stream_update(self, session_id: int):
         async with get_session() as session:
