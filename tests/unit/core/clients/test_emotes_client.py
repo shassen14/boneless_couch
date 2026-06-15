@@ -141,3 +141,57 @@ async def test_fetch_bttv_global_handles_non_list_payload():
     client = EmoteClient()
     with patch("aiohttp.ClientSession", _make_aiohttp_mock(200, {"unexpected": "object"})):
         assert await client._fetch_bttv_global() == {}
+
+
+# ── fetch_* success paths ─────────────────────────────────────────────────────
+
+
+async def test_fetch_7tv_global_parses_payload():
+    client = EmoteClient()
+    payload = {"emotes": [{"name": "Pog", "data": {"host": {"url": "//cdn/x", "files": [{"name": "2x.webp"}]}}}]}
+    with patch("aiohttp.ClientSession", _make_aiohttp_mock(200, payload)):
+        assert await client._fetch_7tv_global() == {"Pog": "https://cdn/x/2x.webp"}
+
+
+async def test_fetch_7tv_channel_reads_nested_emote_set():
+    client = EmoteClient()
+    payload = {"emote_set": {"emotes": [{"name": "Kappa", "data": {"host": {"url": "//cdn/k", "files": [{"name": "2x.webp"}]}}}]}}
+    with patch("aiohttp.ClientSession", _make_aiohttp_mock(200, payload)):
+        assert await client._fetch_7tv_channel("123") == {"Kappa": "https://cdn/k/2x.webp"}
+
+
+async def test_fetch_bttv_channel_merges_channel_and_shared():
+    client = EmoteClient()
+    payload = {
+        "channelEmotes": [{"code": "A", "id": "1", "imageType": "png"}],
+        "sharedEmotes": [{"code": "B", "id": "2", "imageType": "gif"}],
+    }
+    with patch("aiohttp.ClientSession", _make_aiohttp_mock(200, payload)):
+        result = await client._fetch_bttv_channel("123")
+    assert result == {
+        "A": "https://cdn.betterttv.net/emote/1/2x.png",
+        "B": "https://cdn.betterttv.net/emote/2/2x.gif",
+    }
+
+
+async def test_fetch_ffz_global_walks_default_sets():
+    client = EmoteClient()
+    payload = {
+        "default_sets": [42],
+        "sets": {"42": {"emoticons": [{"name": "Z", "urls": {"2": "//ffz/2"}}]}},
+    }
+    with patch("aiohttp.ClientSession", _make_aiohttp_mock(200, payload)):
+        assert await client._fetch_ffz_global() == {"Z": "https://ffz/2"}
+
+
+async def test_fetch_ffz_channel_walks_all_sets():
+    client = EmoteClient()
+    payload = {"sets": {"99": {"emoticons": [{"name": "Y", "urls": {"1": "//ffz/1"}}]}}}
+    with patch("aiohttp.ClientSession", _make_aiohttp_mock(200, payload)):
+        assert await client._fetch_ffz_channel("chan") == {"Y": "https://ffz/1"}
+
+
+async def test_fetch_ffz_channel_non_200_returns_empty():
+    client = EmoteClient()
+    with patch("aiohttp.ClientSession", _make_aiohttp_mock(404, {})):
+        assert await client._fetch_ffz_channel("chan") == {}

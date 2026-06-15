@@ -20,6 +20,7 @@ _mock_settings.DB_PASSWORD = "test"
 _mock_settings.DB_HOST = "localhost"
 _mock_settings.DB_PORT = 5432
 _mock_settings.DB_NAME = "test"
+_mock_settings.SENTRY_DSN = None  # keep sentry_sdk.init() out of imports like main.py
 
 _config_mod = MagicMock()
 _config_mod.settings = _mock_settings

@@ -118,6 +118,10 @@ class TwitchBot(commands.Bot):
         # Coalesces overlapping resubscribe passes: pruning closes sockets, which
         # re-dispatches websocket_closed, which would otherwise re-enter resubscribe.
         self._resubscribing = False
+        # Dedupes stream.online: a websocket rebuild can leave duplicate eventsub
+        # subscriptions that each deliver the same go-live. Both carry an identical
+        # started_at, so we process only the first per live transition.
+        self._online_started_at: datetime | None = None
 
     async def setup_hook(self) -> None:
         await self.lc_client.load_ratings()
@@ -245,6 +249,12 @@ class TwitchBot(commands.Bot):
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         if payload.type != "live":
             return
+        # Set the guard before the first await so concurrent duplicate deliveries
+        # (from duplicate eventsub subscriptions) collapse to a single run.
+        if payload.started_at == self._online_started_at:
+            log.info("Duplicate stream.online (started_at=%s) — ignoring.", payload.started_at)
+            return
+        self._online_started_at = payload.started_at
         log.info("Stream online (started_at=%s) — waiting for stream data to propagate.", payload.started_at)
 
         # Wait until Helix confirms live + returns a real title (handles the
@@ -289,6 +299,7 @@ class TwitchBot(commands.Bot):
 
     async def event_stream_offline(self, _payload: twitchio.StreamOffline) -> None:
         log.info("Stream offline — closing session and notifying Discord bot.")
+        self._online_started_at = None
         await self._trigger_offline()
 
     def _build_bot_subscriptions(self) -> list:
@@ -596,12 +607,34 @@ class TwitchBot(commands.Bot):
             await ws.close()
         return len(dead)
 
+    async def _collapse_duplicate_sockets(self) -> int:
+        """Keep at most one live eventsub socket per token. A socket drop races
+        twitchio's auto-reconnect against our own rebuild, leaving two connected
+        sockets that each hold the full subscription set — so every event is
+        delivered twice (the root cause of duplicate go-live messages). Twitch's
+        409 dedup only collapses duplicates within a single session, so extra live
+        sessions persist until the next drop. Keep the most-subscribed socket and
+        close the rest, leaving a single delivery path."""
+        closed = 0
+        for sockets in self._websockets.values():
+            live = sorted(
+                (ws for ws in list(sockets.values()) if ws.connected),
+                key=lambda s: s.subscription_count,
+                reverse=True,
+            )
+            for ws in live[1:]:
+                await ws.close()
+                closed += 1
+        return closed
+
     async def _resubscribe_all(self) -> tuple[list[str], int]:
-        """Prune dead sockets, then (re)subscribe every eventsub subscription.
-        Pruning first forces a fresh session instead of reusing a stale, disconnected
-        session_id. Idempotent: twitchio swallows the 409 already-subscribed response,
-        so healthy subs are no-ops. Returns (failure descriptions, total attempted).
-        A pass already in flight coalesces this call to a no-op."""
+        """Prune dead sockets and collapse duplicate live ones, then (re)subscribe
+        every eventsub subscription. Pruning forces a fresh session instead of
+        reusing a stale, disconnected session_id; collapsing guarantees a single
+        live socket so events are delivered exactly once. Idempotent: twitchio
+        swallows the 409 already-subscribed response, so healthy subs are no-ops.
+        Returns (failure descriptions, total attempted). A pass already in flight
+        coalesces this call to a no-op."""
         if self._resubscribing:
             return [], 0
         self._resubscribing = True
@@ -609,6 +642,9 @@ class TwitchBot(commands.Bot):
             pruned = await self._prune_dead_eventsub_sockets()
             if pruned:
                 log.warning("Closed %d dead eventsub socket(s); rebuilding.", pruned)
+            collapsed = await self._collapse_duplicate_sockets()
+            if collapsed:
+                log.warning("Closed %d duplicate live eventsub socket(s).", collapsed)
             owner = settings.TWITCH_OWNER_ID
             tagged = [(s, None) for s in self._build_bot_subscriptions()] + [
                 (s, owner) for s in self._build_owner_subscriptions()
