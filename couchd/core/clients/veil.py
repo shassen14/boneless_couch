@@ -78,11 +78,13 @@ async def listen_decisions(
     on_decision: Callable[[str, str, str], Awaitable[None]],
     on_connect: Callable[[], Awaitable[None]] | None = None,
     on_chat_send: Callable[[str, list[str]], Awaitable[None]] | None = None,
+    on_mod_action: Callable[[dict], Awaitable[None]] | None = None,
 ) -> None:
     """Connect to veil WS and react to streamer actions pushed from the cockpit.
 
     on_decision(message_id, decision, platform) — modqueue approve/reject.
     on_chat_send(text, targets)               — send a message / run a command.
+    on_mod_action(data)                       — ban/timeout/delete a chat message.
     """
     if not settings.VEIL_URL:
         return
@@ -108,6 +110,8 @@ async def listen_decisions(
                                 )
                             elif data.get("type") == "chat.send.request" and on_chat_send:
                                 await on_chat_send(d.get("text", ""), d.get("targets", []))
+                            elif data.get("type") == "mod.action.request" and on_mod_action:
+                                await on_mod_action(d)
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             break
         except aiohttp.ClientConnectorError:

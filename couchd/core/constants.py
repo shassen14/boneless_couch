@@ -70,6 +70,14 @@ class TwitchAdDuration(int, Enum):
     THREE_MIN = 180
 
 
+class CockpitModAction(str, Enum):
+    """Per-message moderation actions relayed from veil's cockpit. The string
+    values are the wire contract shared with veil (which has its own enum)."""
+    BAN = "ban"
+    TIMEOUT = "timeout"
+    DELETE = "delete"
+
+
 class StreamOnlineConfig:
     # Helix Get Streams lags the stream.online EventSub event by a few seconds to
     # ~a minute. Poll until the live payload (with a real title) propagates so the
@@ -86,6 +94,10 @@ class AdConfig:
     OPENER_DELAY_SECONDS = 30  # wait for StreamSession to be created before opener ad fires
     COMMERCIAL_RETRY_ATTEMPTS = 3  # start_commercial can 4xx if Twitch hasn't registered live yet
     COMMERCIAL_RETRY_DELAY_SECONDS = 20
+    # Minimum gap between two ad fires. Guards against the manual !ad and the auto
+    # scheduler (or a duplicated chat event) both firing within Twitch's commercial
+    # cooldown and tripping a 429. Covers the longest ad (180s) plus a margin.
+    COMMERCIAL_DEDUP_SECONDS = 200
 
 
 class LeetCodeConfig:

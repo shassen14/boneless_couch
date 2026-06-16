@@ -15,6 +15,8 @@ def ad_manager():
     m.get_remaining = AsyncMock(return_value=180)
     m.log_ad = AsyncMock()
     m.cancel_pending = MagicMock()
+    m.try_reserve_fire = MagicMock(return_value=True)
+    m.release_fire = MagicMock()
     return m
 
 
@@ -117,9 +119,46 @@ async def test_requested_clamped_to_remaining(cog, ad_manager, session):
     clamp.assert_called_once_with(180)
 
 
-async def test_start_commercial_failure_replies(cog, session):
+async def test_start_commercial_failure_replies(cog, ad_manager, session):
     ctx = _ctx("!ad")
     ctx.channel.start_commercial = AsyncMock(side_effect=Exception("twitch down"))
     with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=session)):
         await _run(cog, ctx)
     assert "Failed to run ad" in ctx.reply.call_args.args[0]
+    ad_manager.release_fire.assert_called_once()  # reservation freed for a retry
+    ad_manager.log_ad.assert_not_awaited()
+
+
+async def test_dedup_skips_when_ad_just_fired(cog, ad_manager, session):
+    ad_manager.try_reserve_fire = MagicMock(return_value=False)
+    ctx = _ctx("!ad")
+    with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=session)):
+        await _run(cog, ctx)
+    ctx.channel.start_commercial.assert_not_awaited()
+    ad_manager.log_ad.assert_not_awaited()
+    assert "just ran" in ctx.reply.call_args.args[0]
+
+
+async def test_cancel_pending_before_fire(cog, ad_manager, session):
+    """Manual !ad must cancel a scheduled auto-ad before calling Twitch."""
+    calls = []
+    ad_manager.cancel_pending = MagicMock(side_effect=lambda: calls.append("cancel"))
+    ctx = _ctx("!ad")
+    ctx.channel.start_commercial = AsyncMock(side_effect=lambda **_: calls.append("fire"))
+    with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=session)):
+        await _run(cog, ctx)
+    assert calls == ["cancel", "fire"]
+
+
+async def test_twitch_429_replies_cooldown(cog, ad_manager, session):
+    from twitchio.exceptions import HTTPException
+    ctx = _ctx("!ad")
+    ctx.channel.start_commercial = AsyncMock(
+        side_effect=HTTPException("nope", status=429, extra={"retry_after": 120})
+    )
+    with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=session)):
+        await _run(cog, ctx)
+    msg = ctx.reply.call_args.args[0]
+    assert "cooldown" in msg and "2 min" in msg
+    ad_manager.release_fire.assert_called_once()
+    ad_manager.log_ad.assert_not_awaited()

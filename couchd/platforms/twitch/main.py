@@ -15,7 +15,7 @@ from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, ViewerInteraction
-from couchd.core.constants import ChatMetrics, HoldSource, InteractionType, RaidConfig, StreamDefaults, TwitchBotConfig
+from couchd.core.constants import ChatMetrics, CockpitModAction, HoldSource, InteractionType, Platform, RaidConfig, StreamDefaults, TwitchBotConfig
 from couchd.core.moderation import ModerationEngine
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients.emotes import EmoteClient
@@ -167,6 +167,7 @@ class TwitchBot(commands.Bot):
             self._on_modqueue_decision,
             on_connect=self._on_connect,
             on_chat_send=self._on_chat_send,
+            on_mod_action=self._on_mod_action,
         ))
         asyncio.create_task(streamelements.listen_tips(self._on_tip))
 
@@ -395,6 +396,38 @@ class TwitchBot(commands.Bot):
         """Send a cockpit-typed message / run a command on Twitch chat."""
         if "twitch" in targets:
             await cockpit.handle_send(self, text)
+
+    async def _on_mod_action(self, data: dict) -> None:
+        """Run a per-message moderation action requested from veil's cockpit.
+
+        veil owns no Twitch credentials; it relays the request and the bot acts
+        as the broadcaster (moderator=BOT_ID). The cockpit reflects the result
+        from the delete/clear_user EventSub events Twitch emits afterwards.
+        """
+        if data.get("platform") != Platform.TWITCH.value:
+            return
+        action = data.get("action")
+        try:
+            users = await self.fetch_users(ids=[int(settings.TWITCH_OWNER_ID)])
+            if not users:
+                return
+            owner = users[0]
+            mod = settings.TWITCH_BOT_ID
+            if action == CockpitModAction.DELETE:
+                await owner.delete_chat_messages(moderator=mod, message_id=data["message_id"])
+            elif action == CockpitModAction.BAN:
+                await owner.ban_user(moderator=mod, user=data["user_id"], reason=data.get("reason"))
+            elif action == CockpitModAction.TIMEOUT:
+                await owner.timeout_user(
+                    moderator=mod, user=data["user_id"],
+                    duration=int(data["duration"]), reason=data.get("reason"),
+                )
+            else:
+                log.warning("Unknown cockpit mod action: %s", action)
+                return
+            log.info("Cockpit mod action '%s' on %s ok.", action, data.get("username") or data.get("message_id"))
+        except Exception:
+            log.error("Cockpit mod action '%s' failed", action, exc_info=True)
 
     async def event_subscription(self, payload: twitchio.ChannelSubscribe) -> None:
         if payload.gift:

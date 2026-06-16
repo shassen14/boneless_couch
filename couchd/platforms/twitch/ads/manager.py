@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from couchd.core.db import get_session
+from couchd.core.constants import AdConfig
 from couchd.core.models import StreamEvent
 
 log = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ class AdBudgetManager:
         # is 3600 + ad_duration (e.g. 3-min ad → 63-min window).
         self._window_seconds = 3600 + self._required_seconds
         self._pending_task: asyncio.Task | None = None
+        self._last_fire_at: datetime | None = None
 
     @property
     def window_seconds(self) -> int:
@@ -81,6 +83,23 @@ class AdBudgetManager:
             ))
             await db.commit()
         log.info("Logged ad event: %ds at %s", duration_seconds, vod_timestamp)
+
+    def try_reserve_fire(self) -> bool:
+        """Atomically claim the right to start a commercial. Returns False if an
+        ad was fired within COMMERCIAL_DEDUP_SECONDS — this is the single guard
+        that stops the manual !ad and the auto-scheduler (or a duplicated chat
+        event) from both firing and tripping Twitch's 429 cooldown. There is no
+        await between the check and the set, so it is atomic under asyncio."""
+        now = datetime.now(timezone.utc)
+        if self._last_fire_at and (now - self._last_fire_at).total_seconds() < AdConfig.COMMERCIAL_DEDUP_SECONDS:
+            return False
+        self._last_fire_at = now
+        return True
+
+    def release_fire(self) -> None:
+        """Undo a reservation when the commercial failed to start, so a genuine
+        retry isn't blocked by the dedup window."""
+        self._last_fire_at = None
 
     def set_pending(self, task: asyncio.Task) -> None:
         """Track a newly scheduled auto-ad task."""

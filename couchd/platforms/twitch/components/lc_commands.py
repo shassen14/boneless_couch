@@ -41,6 +41,7 @@ class LCCommands(commands.Component):
 
         chat_payload = {
             "username": payload.chatter.name,
+            "user_id": payload.chatter.id,
             "display_name": payload.chatter.display_name,
             "message": payload.text,
             "color": payload.colour.html if payload.colour else "",

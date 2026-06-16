@@ -2,6 +2,8 @@
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
+from http import HTTPStatus
+from twitchio.exceptions import HTTPException
 from twitchio.ext import commands
 
 from couchd.core.clients.youtube import YouTubeRSSClient
@@ -57,16 +59,34 @@ class AdCommands(commands.Component):
                 return
             duration_seconds = clamp_to_ad_duration(remaining)
 
+        # Cancel any scheduled auto-ad and claim the fire slot before calling Twitch
+        # so the manual ad and the scheduler can't both fire and trip a 429.
+        self.ad_manager.cancel_pending()
+        if not self.ad_manager.try_reserve_fire():
+            await ctx.reply("⏳ An ad just ran — skipping to avoid a Twitch cooldown.")
+            return
+
         try:
             await ctx.channel.start_commercial(length=duration_seconds)
-        except Exception as e:
+        except HTTPException as e:
+            self.ad_manager.release_fire()
+            if e.status == HTTPStatus.TOO_MANY_REQUESTS:
+                retry_after = e.extra.get("retry_after") if isinstance(e.extra, dict) else None
+                wait = f" Try again in ~{round(retry_after / 60)} min." if retry_after else ""
+                log.info("Ad on Twitch cooldown (retry_after=%s).", retry_after)
+                await ctx.reply(f"⏳ Twitch ad cooldown still active.{wait}")
+                return
             log.error("Failed to run ad", exc_info=True)
-            await ctx.reply(f"❌ Failed to run ad: {e}")
+            await ctx.reply("❌ Failed to run ad — Twitch returned an error.")
+            return
+        except Exception:
+            self.ad_manager.release_fire()
+            log.error("Failed to run ad", exc_info=True)
+            await ctx.reply("❌ Failed to run ad — Twitch returned an error.")
             return
 
         vod_ts = compute_vod_timestamp(active_session.start_time)
         await self.ad_manager.log_ad(active_session.id, duration_seconds, vod_ts)
-        self.ad_manager.cancel_pending()
 
         ends_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds)
         return_time = ends_at.astimezone().strftime("%-I:%M %p")

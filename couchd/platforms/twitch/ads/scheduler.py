@@ -125,7 +125,13 @@ class AdScheduler:
             if not users:
                 log.warning("_warn_then_ad: could not fetch channel user to start commercial.")
                 return
+            # Claim the fire slot so a manual !ad firing during the warning window
+            # can't collide with this auto-ad and trip a 429.
+            if not self._ad_manager.try_reserve_fire():
+                log.info("_warn_then_ad: an ad fired recently — skipping auto-ad.")
+                return
             if not await self._start_commercial_with_retry(users[0], clamped):
+                self._ad_manager.release_fire()
                 return
 
             if session is None:

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from couchd.core.constants import AdConfig
 from couchd.platforms.twitch.ads.manager import AdBudgetManager
 
 _GET_SESSION = "couchd.platforms.twitch.ads.manager.get_session"
@@ -103,6 +104,30 @@ def test_cancel_pending_cancels_running_task(manager):
 
     task.cancel.assert_called_once()
     assert manager._pending_task is None
+
+
+# ── fire reservation (dedup guard) ────────────────────────────────────────────
+
+def test_try_reserve_fire_first_call_succeeds(manager):
+    assert manager.try_reserve_fire() is True
+
+
+def test_try_reserve_fire_blocks_within_window(manager):
+    assert manager.try_reserve_fire() is True
+    # a second, near-immediate fire is exactly the double-ad bug we guard against
+    assert manager.try_reserve_fire() is False
+
+
+def test_try_reserve_fire_allows_after_window(manager):
+    assert manager.try_reserve_fire() is True
+    manager._last_fire_at -= timedelta(seconds=AdConfig.COMMERCIAL_DEDUP_SECONDS + 1)
+    assert manager.try_reserve_fire() is True
+
+
+def test_release_fire_unblocks_immediately(manager):
+    assert manager.try_reserve_fire() is True
+    manager.release_fire()
+    assert manager.try_reserve_fire() is True
 
 
 # ── log_ad / get_last_ad_time DB roundtrip ────────────────────────────────────
