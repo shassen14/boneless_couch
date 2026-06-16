@@ -1,4 +1,5 @@
 # tests/unit/core/clients/test_veil_client.py
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -109,3 +110,114 @@ async def test_post_helper_no_url_is_noop(veil_settings):
 async def test_post_helper_error_is_swallowed(veil_settings):
     with patch("aiohttp.ClientSession", side_effect=Exception("boom")):
         await veil.alerts_on()  # must not raise
+
+
+# ── listen_decisions WS dispatch ──────────────────────────────────────────────
+
+
+class _WSMsg:
+    def __init__(self, type_, data=None):
+        self.type = type_
+        self._data = data
+
+    def json(self):
+        return self._data
+
+
+class _FakeWS:
+    """Async-iterable websocket that yields a fixed list of messages once."""
+
+    def __init__(self, messages):
+        self._messages = messages
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    def __aiter__(self):
+        self._it = iter(self._messages)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._it)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
+def _ws_session(ws):
+    """aiohttp.ClientSession() context manager whose ws_connect returns `ws`."""
+    http = MagicMock()
+    http.ws_connect = MagicMock(return_value=ws)
+    session_cm = AsyncMock()
+    session_cm.__aenter__ = AsyncMock(return_value=http)
+    session_cm.__aexit__ = AsyncMock(return_value=False)
+    return MagicMock(return_value=session_cm)
+
+
+async def _run_listen(veil_settings, messages, **kw):
+    """Drive one pass of listen_decisions; break the reconnect loop via sleep."""
+    ws = _FakeWS(messages)
+    with patch("aiohttp.ClientSession", _ws_session(ws)), patch(
+        f"{_MOD}.asyncio.sleep", AsyncMock(side_effect=asyncio.CancelledError)
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await veil.listen_decisions(**kw)
+
+
+async def test_listen_decisions_no_url_is_noop(veil_settings):
+    veil_settings.VEIL_URL = ""
+    on_decision = AsyncMock()
+    await veil.listen_decisions(on_decision)  # returns immediately, no raise
+    on_decision.assert_not_awaited()
+
+
+async def test_listen_decisions_routes_modqueue_and_chat(veil_settings):
+    on_decision, on_connect, on_chat = AsyncMock(), AsyncMock(), AsyncMock()
+    messages = [
+        _WSMsg(
+            aiohttp.WSMsgType.TEXT,
+            {
+                "type": "modqueue.decision",
+                "data": {"message_id": "m1", "decision": "approve", "platform": "youtube"},
+            },
+        ),
+        _WSMsg(
+            aiohttp.WSMsgType.TEXT,
+            {"type": "chat.send.request", "data": {"text": "hi", "targets": ["twitch"]}},
+        ),
+        _WSMsg(aiohttp.WSMsgType.CLOSED),
+    ]
+    await _run_listen(
+        veil_settings,
+        messages,
+        on_decision=on_decision,
+        on_connect=on_connect,
+        on_chat_send=on_chat,
+    )
+    on_connect.assert_awaited_once()
+    on_decision.assert_awaited_once_with("m1", "approve", "youtube")
+    on_chat.assert_awaited_once_with("hi", ["twitch"])
+
+
+async def test_listen_decisions_modqueue_defaults_platform_to_twitch(veil_settings):
+    on_decision = AsyncMock()
+    messages = [
+        _WSMsg(aiohttp.WSMsgType.TEXT, {"type": "modqueue.decision", "data": {}}),
+        _WSMsg(aiohttp.WSMsgType.CLOSED),
+    ]
+    await _run_listen(veil_settings, messages, on_decision=on_decision)
+    on_decision.assert_awaited_once_with("", "", "twitch")
+
+
+async def test_listen_decisions_ignores_chat_when_no_handler(veil_settings):
+    on_decision = AsyncMock()
+    messages = [
+        _WSMsg(aiohttp.WSMsgType.TEXT, {"type": "chat.send.request", "data": {"text": "x"}}),
+        _WSMsg(aiohttp.WSMsgType.CLOSED),
+    ]
+    # on_chat_send omitted → chat request must be silently dropped, no crash.
+    await _run_listen(veil_settings, messages, on_decision=on_decision)
+    on_decision.assert_not_awaited()

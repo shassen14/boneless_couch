@@ -123,3 +123,74 @@ async def test_get_recap_counts_and_lists(seeded):
     assert recap["problems"][0]["title"] == "Two Sum"
     assert recap["projects"][0]["title"] == "boneless_couch"
     assert recap["duration_seconds"] == 3600
+
+
+async def test_get_recap_unknown_session_returns_none(seeded):
+    assert await queries.get_recap(999999) is None
+
+
+async def test_get_session_detail_round_trips(seeded):
+    detail = await queries.get_session_detail(seeded.id)
+    assert detail["id"] == seeded.id
+    assert detail["title"] == "grind"
+
+
+async def test_get_session_detail_unknown_returns_none(seeded):
+    assert await queries.get_session_detail(999999) is None
+
+
+async def test_list_sessions_since_filters_out_older(seeded):
+    after_end = START + timedelta(seconds=7200)
+    assert await queries.list_sessions(since=after_end, limit=50) == []
+    assert len(await queries.list_sessions(since=START, limit=50)) == 1
+
+
+async def test_list_sessions_limit_caps_rows(db_session):
+    for i in range(3):
+        db_session.add(
+            StreamSession(
+                platform="twitch",
+                title=f"s{i}",
+                start_time=START + timedelta(hours=i),
+                is_active=False,
+            )
+        )
+    await db_session.commit()
+    rows = await queries.list_sessions(since=None, limit=2)
+    assert len(rows) == 2
+    # Newest first: ordered by start_time desc.
+    assert rows[0]["title"] == "s2"
+
+
+async def test_get_active_session_returns_active_twitch_only(db_session):
+    inactive = StreamSession(
+        platform="twitch", title="old", start_time=START, is_active=False
+    )
+    other_platform = StreamSession(
+        platform="youtube",
+        title="yt",
+        start_time=START + timedelta(hours=1),
+        is_active=True,
+    )
+    active = StreamSession(
+        platform="twitch",
+        title="live",
+        start_time=START + timedelta(hours=2),
+        is_active=True,
+    )
+    db_session.add_all([inactive, other_platform, active])
+    await db_session.commit()
+
+    data = await queries.get_active_session()
+    assert data is not None
+    assert data["title"] == "live"
+
+
+async def test_get_active_session_none_when_no_active(db_session):
+    db_session.add(
+        StreamSession(
+            platform="twitch", title="old", start_time=START, is_active=False
+        )
+    )
+    await db_session.commit()
+    assert await queries.get_active_session() is None
