@@ -100,6 +100,19 @@ class AdConfig:
     COMMERCIAL_DEDUP_SECONDS = 200
 
 
+class AdReplies:
+    """User-facing chat replies for the !ad command."""
+
+    NO_ACTIVE_SESSION = "⚠️ No active stream session."
+    QUOTA_MET = "Ad quota already met this hour."
+    USAGE = "Usage: !ad [minutes] — e.g. !ad 1.5 for 90s"
+    JUST_RAN = "⏳ An ad just ran — skipping to avoid a Twitch cooldown."
+    COOLDOWN = "⏳ Twitch ad cooldown still active.{wait}"
+    COOLDOWN_RETRY = " Try again in ~{minutes} min."
+    FAILED = "❌ Failed to run ad — Twitch returned an error."
+    BREAK = "🎬 Ad break — back at {return_time}!"
+
+
 class LeetCodeConfig:
     BASE_URL = "https://leetcode.com"
     GRAPHQL_URL = "https://leetcode.com/graphql"
