@@ -37,6 +37,38 @@ async def test_collapse_noop_with_single_socket():
     only.close.assert_not_called()
 
 
+def _sub(status, type_, id_):
+    return SimpleNamespace(status=status, type=type_, id=id_, delete=AsyncMock())
+
+
+async def _aiter(items):
+    for item in items:
+        yield item
+
+
+async def test_prune_deletes_only_stale_subs_of_our_types():
+    """Disconnected subs of our own types are deleted with their owning token;
+    enabled subs and foreign types are left untouched."""
+    live = _sub("enabled", "channel.chat.message", "live")
+    stale_bot = _sub("websocket_disconnected", "channel.chat.message", "s1")
+    stale_owner = _sub("websocket_disconnected", "channel.cheer", "s2")
+    foreign = _sub("websocket_disconnected", "channel.ban", "x")
+    bot = SimpleNamespace(
+        _subscription_token_map=lambda: {"channel.chat.message": "BOT", "channel.cheer": "OWNER"},
+        fetch_eventsub_subscriptions=AsyncMock(
+            return_value=SimpleNamespace(subscriptions=_aiter([live, stale_bot, stale_owner, foreign]))
+        ),
+    )
+
+    deleted = await TwitchBot._prune_stale_eventsub_subscriptions(bot)
+
+    assert deleted == 2
+    live.delete.assert_not_called()
+    foreign.delete.assert_not_called()
+    stale_bot.delete.assert_awaited_once_with(token_for="BOT")
+    stale_owner.delete.assert_awaited_once_with(token_for="OWNER")
+
+
 def _online_bot():
     return SimpleNamespace(
         _online_started_at=None,

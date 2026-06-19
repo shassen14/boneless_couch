@@ -660,6 +660,37 @@ class TwitchBot(commands.Bot):
                 closed += 1
         return closed
 
+    def _subscription_token_map(self) -> dict[str, str]:
+        """Map each subscription type we own to the user id whose token created
+        it. Deleting a websocket eventsub subscription requires that same user
+        token, so this lets the stale-sub pruner pick the right one."""
+        bot = settings.TWITCH_BOT_ID
+        owner = settings.TWITCH_OWNER_ID
+        token_map = {s.type: bot for s in self._build_bot_subscriptions()}
+        token_map.update({s.type: owner for s in self._build_owner_subscriptions()})
+        return token_map
+
+    async def _prune_stale_eventsub_subscriptions(self) -> int:
+        """Delete eventsub subscriptions left behind by dead websocket sessions.
+        Twitch keeps disconnected websocket subs around for ~1 min before garbage
+        collecting them, and they still count against the per-(type, condition)
+        limit — so an immediate rebuild hits 429 'maximum subscriptions with type
+        and condition exceeded'. Only non-enabled subs of our own types are
+        deleted, so the live delivery path is never touched."""
+        token_map = self._subscription_token_map()
+        deleted = 0
+        resp = await self.fetch_eventsub_subscriptions()
+        async for sub in resp.subscriptions:
+            if sub.status == "enabled" or sub.type not in token_map:
+                continue
+            try:
+                await sub.delete(token_for=token_map[sub.type])
+                deleted += 1
+            except Exception as e:
+                log.warning("Could not delete stale eventsub sub %s (%s): %s",
+                            sub.id, sub.type, e)
+        return deleted
+
     async def _resubscribe_all(self) -> tuple[list[str], int]:
         """Prune dead sockets and collapse duplicate live ones, then (re)subscribe
         every eventsub subscription. Pruning forces a fresh session instead of
@@ -678,6 +709,9 @@ class TwitchBot(commands.Bot):
             collapsed = await self._collapse_duplicate_sockets()
             if collapsed:
                 log.warning("Closed %d duplicate live eventsub socket(s).", collapsed)
+            stale = await self._prune_stale_eventsub_subscriptions()
+            if stale:
+                log.warning("Deleted %d stale eventsub subscription(s) before rebuild.", stale)
             owner = settings.TWITCH_OWNER_ID
             tagged = [(s, None) for s in self._build_bot_subscriptions()] + [
                 (s, owner) for s in self._build_owner_subscriptions()
