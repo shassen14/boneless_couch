@@ -21,12 +21,16 @@ _HEALTH_PATH = f"{ApiConfig.ROUTE_PREFIX}/health"
 
 
 class BearerTokenMiddleware(BaseHTTPMiddleware):
-    """Reject any request lacking ``Authorization: Bearer <API_SECRET>``."""
+    """Require ``Authorization: Bearer <API_SECRET>`` — but only when a secret is set.
+
+    With no ``API_SECRET`` configured the API runs open (every request passes), which
+    is the zero-setup path for a trusted LAN. Set ``API_SECRET`` to lock it down.
+    """
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        if request.url.path == _HEALTH_PATH:
+        if request.url.path == _HEALTH_PATH or not settings.API_SECRET:
             return await call_next(request)
 
         header = request.headers.get(ApiConfig.AUTH_HEADER, "")

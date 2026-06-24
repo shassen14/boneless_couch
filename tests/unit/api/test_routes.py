@@ -85,6 +85,16 @@ async def test_bad_auth_is_401(app, header):
     assert status == 401
 
 
+async def test_no_secret_runs_open(mock_settings):
+    """With no API_SECRET, the API is unauthenticated (zero-setup trusted-LAN path)."""
+    with patch.object(mock_settings, "API_SECRET", None):
+        open_app = create_app()
+        with patch.object(routes.queries, "list_sessions", AsyncMock(return_value=[])):
+            status, body = await _call(open_app, f"{_PREFIX}/sessions")  # no auth header
+    assert status == 200
+    assert body == []
+
+
 # ── list_sessions: query-param parsing ────────────────────────────────────────
 
 async def test_list_sessions_passes_parsed_params(app):

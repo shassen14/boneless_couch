@@ -3,8 +3,10 @@
 
 Run as its own process:  ``python -m couchd.api.main``
 
-Binds only when ``API_SECRET`` is set (the feature flag). Built on Starlette so
-no web framework is added beyond what ``twitchio[starlette]`` already provides.
+Starting this process serves the API — there is no enable flag. ``API_SECRET`` is
+optional: set it to require a bearer token, or leave it blank to run open on a
+trusted LAN. Built on Starlette so no web framework is added beyond what
+``twitchio[starlette]`` already provides.
 """
 import logging
 
@@ -54,10 +56,9 @@ app = create_app()
 def main() -> None:
     if not settings.API_SECRET:
         log.warning(
-            "API_SECRET is not set; content_os read API will not start. "
-            "Set API_SECRET in .env to enable it."
+            "content_os read API starting WITHOUT auth (no API_SECRET) — only safe on a "
+            "trusted private network. Set API_SECRET in .env to require a bearer token."
         )
-        return
     log.info("Starting content_os read API on %s:%s", settings.API_HOST, settings.API_PORT)
     uvicorn.run(app, host=settings.API_HOST, port=settings.API_PORT)
 
