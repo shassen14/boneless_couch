@@ -23,7 +23,15 @@ db_url = URL.create(
 
 # 2. Initialize the Engine and Session Factory
 try:
-    engine = create_async_engine(db_url, echo=False)
+    # pool_pre_ping tests each pooled connection before use and transparently
+    # replaces ones severed by a network blip (avoids ConnectionDoesNotExistError
+    # on the next query); pool_recycle drops connections older than 30 min.
+    engine = create_async_engine(
+        db_url,
+        echo=False,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+    )
     # expire_on_commit=False is crucial for async discord bots so we can
     # access object attributes after the transaction closes.
     SessionLocal = async_sessionmaker(

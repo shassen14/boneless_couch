@@ -59,13 +59,19 @@ class StreamWatcherCog(commands.Cog):
             try:
                 await self._listener_conn.fetchval("SELECT 1")
             except Exception:
+                # A reconnect that fails (network still down) must never escape
+                # this loop — otherwise the task dies and NOTIFY delivery stops
+                # silently even after the network recovers. Retry next tick.
                 log.warning("Listener connection lost — reconnecting.")
                 try:
                     await self._listener_conn.close()
                 except Exception:
                     pass
-                await self._connect_listener()
-                log.info("Listener connection re-established.")
+                try:
+                    await self._connect_listener()
+                    log.info("Listener connection re-established.")
+                except Exception:
+                    log.error("Listener reconnect failed — retrying next cycle.", exc_info=True)
 
     def _on_stream_online(self, _conn, _pid, _channel, payload):
         log.info("Received stream_online pg_notify.")

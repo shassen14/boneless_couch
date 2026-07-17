@@ -745,16 +745,21 @@ class TwitchBot(commands.Bot):
     async def _run_subscription_health_check(self) -> None:
         while True:
             await asyncio.sleep(TwitchBotConfig.SUBSCRIPTION_HEALTH_CHECK_SECONDS)
-            # The ERROR is the only level that reaches the webhook, so embed the
-            # actual reasons to keep the alert actionable.
-            failures, total = await self._resubscribe_all()
-            if failures:
-                log.error(
-                    "Subscription health check: %d/%d failed to resubscribe:\n%s",
-                    len(failures), total, "\n".join(failures),
-                )
-            else:
-                log.debug("Subscription health check: all %d subscriptions OK.", total)
+            try:
+                # The ERROR is the only level that reaches the webhook, so embed the
+                # actual reasons to keep the alert actionable.
+                failures, total = await self._resubscribe_all()
+                if failures:
+                    log.error(
+                        "Subscription health check: %d/%d failed to resubscribe:\n%s",
+                        len(failures), total, "\n".join(failures),
+                    )
+                else:
+                    log.debug("Subscription health check: all %d subscriptions OK.", total)
+            except Exception:
+                # A raise here (e.g. Helix unreachable mid-prune) must not kill the
+                # loop — otherwise EventSub never self-heals. Retry next cycle.
+                log.error("Subscription health check cycle failed — retrying next cycle.", exc_info=True)
 
     async def _run_metrics_loop(self) -> None:
         """Periodically update peak viewer count and log high-velocity chat."""
