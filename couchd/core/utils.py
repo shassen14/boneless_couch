@@ -1,5 +1,4 @@
 # couchd/core/utils.py
-import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -34,50 +33,46 @@ async def get_active_session(platform: Platform = Platform.TWITCH) -> StreamSess
 
 
 async def get_overlay_stats() -> dict:
+    # An AsyncSession wraps one connection and is not safe for concurrent use;
+    # asyncpg serializes a single connection's queries at the wire anyway, so
+    # these run sequentially (gather here would corrupt the session's state).
     async with get_session() as db:
-        last_follow_r, last_raid_r, last_bits_r, recent_subs_r, longest_subs_r = await asyncio.gather(
-            db.execute(
-                select(ViewerInteraction)
-                .where(ViewerInteraction.interaction_type == InteractionType.FOLLOW)
-                .order_by(ViewerInteraction.timestamp.desc()).limit(1)
-            ),
-            db.execute(
-                select(ViewerInteraction)
-                .where(ViewerInteraction.interaction_type == InteractionType.RAID)
-                .order_by(ViewerInteraction.timestamp.desc()).limit(1)
-            ),
-            db.execute(
-                select(ViewerInteraction)
-                .where(ViewerInteraction.interaction_type == InteractionType.BITS)
-                .order_by(ViewerInteraction.timestamp.desc()).limit(1)
-            ),
-            db.execute(
-                select(ViewerInteraction)
-                .where(ViewerInteraction.interaction_type.in_([
-                    InteractionType.SUB, InteractionType.RESUB, InteractionType.GIFTBOMB,
-                ]))
-                .order_by(ViewerInteraction.timestamp.desc()).limit(5)
-            ),
-            db.execute(
-                select(
-                    ViewerInteraction.username,
-                    func.max(ViewerInteraction.display_name).label("display_name"),
-                    func.count().label("months"),
-                )
-                .where(
-                    ViewerInteraction.interaction_type.in_([InteractionType.SUB, InteractionType.RESUB])
-                    & (ViewerInteraction.username != settings.TWITCH_CHANNEL)
-                )
-                .group_by(ViewerInteraction.username)
-                .order_by(func.count().desc())
-                .limit(5)
-            ),
-        )
-        last_follow = last_follow_r.scalars().first()
-        last_raid = last_raid_r.scalars().first()
-        last_bits = last_bits_r.scalars().first()
-        recent_subs = recent_subs_r.scalars().all()
-        longest_subs = longest_subs_r.all()
+        last_follow = (await db.execute(
+            select(ViewerInteraction)
+            .where(ViewerInteraction.interaction_type == InteractionType.FOLLOW)
+            .order_by(ViewerInteraction.timestamp.desc()).limit(1)
+        )).scalars().first()
+        last_raid = (await db.execute(
+            select(ViewerInteraction)
+            .where(ViewerInteraction.interaction_type == InteractionType.RAID)
+            .order_by(ViewerInteraction.timestamp.desc()).limit(1)
+        )).scalars().first()
+        last_bits = (await db.execute(
+            select(ViewerInteraction)
+            .where(ViewerInteraction.interaction_type == InteractionType.BITS)
+            .order_by(ViewerInteraction.timestamp.desc()).limit(1)
+        )).scalars().first()
+        recent_subs = (await db.execute(
+            select(ViewerInteraction)
+            .where(ViewerInteraction.interaction_type.in_([
+                InteractionType.SUB, InteractionType.RESUB, InteractionType.GIFTBOMB,
+            ]))
+            .order_by(ViewerInteraction.timestamp.desc()).limit(5)
+        )).scalars().all()
+        longest_subs = (await db.execute(
+            select(
+                ViewerInteraction.username,
+                func.max(ViewerInteraction.display_name).label("display_name"),
+                func.count().label("months"),
+            )
+            .where(
+                ViewerInteraction.interaction_type.in_([InteractionType.SUB, InteractionType.RESUB])
+                & (ViewerInteraction.username != settings.TWITCH_CHANNEL)
+            )
+            .group_by(ViewerInteraction.username)
+            .order_by(func.count().desc())
+            .limit(5)
+        )).all()
 
     def _row(v: ViewerInteraction) -> dict:
         return {
