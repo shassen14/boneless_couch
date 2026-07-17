@@ -15,7 +15,7 @@ from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession, ViewerInteraction
-from couchd.core.constants import ChatMetrics, HoldSource, InteractionType, RaidConfig, StreamDefaults, TwitchBotConfig
+from couchd.core.constants import ChatMetrics, CockpitModAction, HoldSource, InteractionType, Platform, RaidConfig, StreamDefaults, TwitchBotConfig
 from couchd.core.moderation import ModerationEngine
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients.emotes import EmoteClient
@@ -115,6 +115,13 @@ class TwitchBot(commands.Bot):
         self.ad_scheduler = AdScheduler(self, self.ad_manager, self.youtube_client)
         self.chat_timers = ChatTimers(self)
         self.mod_engine = ModerationEngine(settings.MODERATION_PATTERNS)
+        # Coalesces overlapping resubscribe passes: pruning closes sockets, which
+        # re-dispatches websocket_closed, which would otherwise re-enter resubscribe.
+        self._resubscribing = False
+        # Dedupes stream.online: a websocket rebuild can leave duplicate eventsub
+        # subscriptions that each deliver the same go-live. Both carry an identical
+        # started_at, so we process only the first per live transition.
+        self._online_started_at: datetime | None = None
 
     async def setup_hook(self) -> None:
         await self.lc_client.load_ratings()
@@ -160,6 +167,7 @@ class TwitchBot(commands.Bot):
             self._on_modqueue_decision,
             on_connect=self._on_connect,
             on_chat_send=self._on_chat_send,
+            on_mod_action=self._on_mod_action,
         ))
         asyncio.create_task(streamelements.listen_tips(self._on_tip))
 
@@ -242,10 +250,20 @@ class TwitchBot(commands.Bot):
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         if payload.type != "live":
             return
-        log.info("Stream online (started_at=%s) — scheduling opener ad.", payload.started_at)
+        # Set the guard before the first await so concurrent duplicate deliveries
+        # (from duplicate eventsub subscriptions) collapse to a single run.
+        if payload.started_at == self._online_started_at:
+            log.info("Duplicate stream.online (started_at=%s) — ignoring.", payload.started_at)
+            return
+        self._online_started_at = payload.started_at
+        log.info("Stream online (started_at=%s) — waiting for stream data to propagate.", payload.started_at)
+
+        # Wait until Helix confirms live + returns a real title (handles the
+        # propagation lag after stream.online). Only then do we announce and run
+        # the opener ad — both are unreliable until Twitch registers the stream.
+        stream_data = await self.twitch_client.get_stream_status_when_ready(settings.TWITCH_CHANNEL)
         self.ad_scheduler.fire_opener()
 
-        stream_data = await self.twitch_client.get_stream_status(settings.TWITCH_CHANNEL)
         title = (stream_data.get("title") if stream_data else "") or StreamDefaults.TITLE.value
         category = (stream_data.get("game_name") if stream_data else "") or StreamDefaults.CATEGORY.value
         await send_chat_message(
@@ -282,6 +300,7 @@ class TwitchBot(commands.Bot):
 
     async def event_stream_offline(self, _payload: twitchio.StreamOffline) -> None:
         log.info("Stream offline — closing session and notifying Discord bot.")
+        self._online_started_at = None
         await self._trigger_offline()
 
     def _build_bot_subscriptions(self) -> list:
@@ -377,6 +396,38 @@ class TwitchBot(commands.Bot):
         """Send a cockpit-typed message / run a command on Twitch chat."""
         if "twitch" in targets:
             await cockpit.handle_send(self, text)
+
+    async def _on_mod_action(self, data: dict) -> None:
+        """Run a per-message moderation action requested from veil's cockpit.
+
+        veil owns no Twitch credentials; it relays the request and the bot acts
+        as the broadcaster (moderator=BOT_ID). The cockpit reflects the result
+        from the delete/clear_user EventSub events Twitch emits afterwards.
+        """
+        if data.get("platform") != Platform.TWITCH.value:
+            return
+        action = data.get("action")
+        try:
+            users = await self.fetch_users(ids=[int(settings.TWITCH_OWNER_ID)])
+            if not users:
+                return
+            owner = users[0]
+            mod = settings.TWITCH_BOT_ID
+            if action == CockpitModAction.DELETE:
+                await owner.delete_chat_messages(moderator=mod, message_id=data["message_id"])
+            elif action == CockpitModAction.BAN:
+                await owner.ban_user(moderator=mod, user=data["user_id"], reason=data.get("reason"))
+            elif action == CockpitModAction.TIMEOUT:
+                await owner.timeout_user(
+                    moderator=mod, user=data["user_id"],
+                    duration=int(data["duration"]), reason=data.get("reason"),
+                )
+            else:
+                log.warning("Unknown cockpit mod action: %s", action)
+                return
+            log.info("Cockpit mod action '%s' on %s ok.", action, data.get("username") or data.get("message_id"))
+        except Exception:
+            log.error("Cockpit mod action '%s' failed", action, exc_info=True)
 
     async def event_subscription(self, payload: twitchio.ChannelSubscribe) -> None:
         if payload.gift:
@@ -573,30 +624,142 @@ class TwitchBot(commands.Bot):
             return
         log.error("Command error: %s", payload.exception, exc_info=payload.exception)
 
-    async def _run_subscription_health_check(self) -> None:
-        owner = settings.TWITCH_OWNER_ID
-        tagged = [(s, None) for s in self._build_bot_subscriptions()] + [
-            (s, owner) for s in self._build_owner_subscriptions()
+    async def _prune_dead_eventsub_sockets(self) -> int:
+        """Close eventsub websockets whose connection has died so the next subscribe
+        builds a fresh session. Recovers from the Twitch 400 'websocket transport
+        session does not exist' that twitchio's auto-reconnect can fail to clear —
+        otherwise every resubscribe reuses the dead session_id and fails forever.
+        ``Websocket.close()`` self-removes the socket from the client registry."""
+        dead = [
+            ws
+            for sockets in self._websockets.values()
+            for ws in list(sockets.values())
+            if not ws.connected
         ]
-        while True:
-            await asyncio.sleep(TwitchBotConfig.SUBSCRIPTION_HEALTH_CHECK_SECONDS)
-            failed = 0
+        for ws in dead:
+            await ws.close()
+        return len(dead)
+
+    async def _collapse_duplicate_sockets(self) -> int:
+        """Keep at most one live eventsub socket per token. A socket drop races
+        twitchio's auto-reconnect against our own rebuild, leaving two connected
+        sockets that each hold the full subscription set — so every event is
+        delivered twice (the root cause of duplicate go-live messages). Twitch's
+        409 dedup only collapses duplicates within a single session, so extra live
+        sessions persist until the next drop. Keep the most-subscribed socket and
+        close the rest, leaving a single delivery path."""
+        closed = 0
+        for sockets in self._websockets.values():
+            live = sorted(
+                (ws for ws in list(sockets.values()) if ws.connected),
+                key=lambda s: s.subscription_count,
+                reverse=True,
+            )
+            for ws in live[1:]:
+                await ws.close()
+                closed += 1
+        return closed
+
+    def _subscription_token_map(self) -> dict[str, str]:
+        """Map each subscription type we own to the user id whose token created
+        it. Deleting a websocket eventsub subscription requires that same user
+        token, so this lets the stale-sub pruner pick the right one."""
+        bot = settings.TWITCH_BOT_ID
+        owner = settings.TWITCH_OWNER_ID
+        token_map = {s.type: bot for s in self._build_bot_subscriptions()}
+        token_map.update({s.type: owner for s in self._build_owner_subscriptions()})
+        return token_map
+
+    async def _prune_stale_eventsub_subscriptions(self) -> int:
+        """Delete eventsub subscriptions left behind by dead websocket sessions.
+        Twitch keeps disconnected websocket subs around for ~1 min before garbage
+        collecting them, and they still count against the per-(type, condition)
+        limit — so an immediate rebuild hits 429 'maximum subscriptions with type
+        and condition exceeded'. Only non-enabled subs of our own types are
+        deleted, so the live delivery path is never touched."""
+        token_map = self._subscription_token_map()
+        deleted = 0
+        resp = await self.fetch_eventsub_subscriptions()
+        async for sub in resp.subscriptions:
+            if sub.status == "enabled" or sub.type not in token_map:
+                continue
+            try:
+                await sub.delete(token_for=token_map[sub.type])
+                deleted += 1
+            except Exception as e:
+                log.warning("Could not delete stale eventsub sub %s (%s): %s",
+                            sub.id, sub.type, e)
+        return deleted
+
+    async def _resubscribe_all(self) -> tuple[list[str], int]:
+        """Prune dead sockets and collapse duplicate live ones, then (re)subscribe
+        every eventsub subscription. Pruning forces a fresh session instead of
+        reusing a stale, disconnected session_id; collapsing guarantees a single
+        live socket so events are delivered exactly once. Idempotent: twitchio
+        swallows the 409 already-subscribed response, so healthy subs are no-ops.
+        Returns (failure descriptions, total attempted). A pass already in flight
+        coalesces this call to a no-op."""
+        if self._resubscribing:
+            return [], 0
+        self._resubscribing = True
+        try:
+            pruned = await self._prune_dead_eventsub_sockets()
+            if pruned:
+                log.warning("Closed %d dead eventsub socket(s); rebuilding.", pruned)
+            collapsed = await self._collapse_duplicate_sockets()
+            if collapsed:
+                log.warning("Closed %d duplicate live eventsub socket(s).", collapsed)
+            stale = await self._prune_stale_eventsub_subscriptions()
+            if stale:
+                log.warning("Deleted %d stale eventsub subscription(s) before rebuild.", stale)
+            owner = settings.TWITCH_OWNER_ID
+            tagged = [(s, None) for s in self._build_bot_subscriptions()] + [
+                (s, owner) for s in self._build_owner_subscriptions()
+            ]
+            failures: list[str] = []
             for sub, token_for in tagged:
                 try:
                     await self.subscribe_websocket(payload=sub, token_for=token_for)
-                except twitchio.HTTPException as e:
-                    if e.status == 409:
-                        pass  # already active, healthy
-                    else:
-                        failed += 1
-                        log.warning("Health check resubscribe failed for %s: %s", sub.__class__.__name__, e)
                 except Exception as e:
-                    failed += 1
-                    log.warning("Health check resubscribe failed for %s: %s", sub.__class__.__name__, e)
-            if failed:
-                log.error("Subscription health check: %d/%d failed to resubscribe.", failed, len(tagged))
-            else:
-                log.debug("Subscription health check: all %d subscriptions OK.", len(tagged))
+                    failures.append(f"{sub.__class__.__name__}: {e}")
+            return failures, len(tagged)
+        finally:
+            self._resubscribing = False
+
+    async def event_websocket_closed(self, payload) -> None:
+        """Fast-path recovery: an eventsub socket closed terminally (Twitch 4001/4003
+        or revocation), so its subscriptions are gone — rebuild immediately instead of
+        waiting up to a full health-check interval. Skipped during bot shutdown, where
+        the client closes every socket on purpose."""
+        if self._has_closed:
+            return
+        log.warning("Eventsub websocket closed (session=%s) — rebuilding subscriptions.",
+                    payload.socket.session_id)
+        failures, total = await self._resubscribe_all()
+        if failures:
+            log.error("Resubscribe after websocket close: %d/%d failed:\n%s",
+                      len(failures), total, "\n".join(failures))
+        else:
+            log.info("Resubscribe after websocket close: all %d subscriptions OK.", total)
+
+    async def _run_subscription_health_check(self) -> None:
+        while True:
+            await asyncio.sleep(TwitchBotConfig.SUBSCRIPTION_HEALTH_CHECK_SECONDS)
+            try:
+                # The ERROR is the only level that reaches the webhook, so embed the
+                # actual reasons to keep the alert actionable.
+                failures, total = await self._resubscribe_all()
+                if failures:
+                    log.error(
+                        "Subscription health check: %d/%d failed to resubscribe:\n%s",
+                        len(failures), total, "\n".join(failures),
+                    )
+                else:
+                    log.debug("Subscription health check: all %d subscriptions OK.", total)
+            except Exception:
+                # A raise here (e.g. Helix unreachable mid-prune) must not kill the
+                # loop — otherwise EventSub never self-heals. Retry next cycle.
+                log.error("Subscription health check cycle failed — retrying next cycle.", exc_info=True)
 
     async def _run_metrics_loop(self) -> None:
         """Periodically update peak viewer count and log high-velocity chat."""

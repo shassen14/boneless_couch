@@ -16,6 +16,7 @@ def bot_commands():
     return LCCommands(
         lc_client=MagicMock(),
         metrics_tracker=MagicMock(),
+        mod_engine=MagicMock(),
     )
 
 

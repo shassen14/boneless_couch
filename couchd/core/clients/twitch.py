@@ -1,8 +1,10 @@
 # couchd/core/clients/twitch.py
+import asyncio
 import aiohttp
 import logging
 
 from couchd.core.config import settings
+from couchd.core.constants import StreamOnlineConfig
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +89,29 @@ class TwitchClient:
         except Exception as e:
             log.error("Exception while checking Twitch stream status", exc_info=e)
             return None
+
+    async def get_stream_status_when_ready(self, username: str) -> dict | None:
+        """
+        Like get_stream_status, but tolerant of the propagation lag right after
+        stream.online fires: Helix often returns nothing (or a payload without a
+        title) for a few seconds to a minute. Polls until the live payload with a
+        non-empty title appears, then returns it. Returns the last seen payload
+        (possibly None) if it never propagates within the budget.
+        """
+        last: dict | None = None
+        for attempt in range(StreamOnlineConfig.DATA_POLL_ATTEMPTS):
+            try:
+                data = await self.get_stream_status(username)
+            except aiohttp.ClientError:
+                data = None  # transient — keep polling
+            if data and data.get("title"):
+                if attempt:
+                    log.info("Stream data propagated after %d attempt(s).", attempt + 1)
+                return data
+            last = data or last
+            await asyncio.sleep(StreamOnlineConfig.DATA_POLL_INTERVAL_SECONDS)
+        log.warning("Stream data did not fully propagate within poll budget.")
+        return last
 
     async def get_user_id(self, username: str) -> str | None:
         """Fetches the Twitch user ID for a given username. Returns the ID string or None."""

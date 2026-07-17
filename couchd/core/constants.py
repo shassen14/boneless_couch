@@ -70,12 +70,47 @@ class TwitchAdDuration(int, Enum):
     THREE_MIN = 180
 
 
+class CockpitModAction(str, Enum):
+    """Per-message moderation actions relayed from veil's cockpit. The string
+    values are the wire contract shared with veil (which has its own enum)."""
+    BAN = "ban"
+    TIMEOUT = "timeout"
+    DELETE = "delete"
+
+
+class StreamOnlineConfig:
+    # Helix Get Streams lags the stream.online EventSub event by a few seconds to
+    # ~a minute. Poll until the live payload (with a real title) propagates so the
+    # go-live announcement never falls back to the default title.
+    DATA_POLL_ATTEMPTS = 12
+    DATA_POLL_INTERVAL_SECONDS = 5
+
+
 class AdConfig:
     # WINDOW_SECONDS is computed per-instance in AdBudgetManager as 3600 + required_seconds,
     # because Twitch's cooldown is 60 min starting AFTER the ad ends (e.g. 3-min ad = 63-min window).
     WARNING_SECONDS = 60  # warn N seconds before mid-stream auto-ad fires
     MIN_STREAM_AGE_SECONDS = 5 * 60  # delay before fallback opener check
     OPENER_DELAY_SECONDS = 30  # wait for StreamSession to be created before opener ad fires
+    COMMERCIAL_RETRY_ATTEMPTS = 3  # start_commercial can 4xx if Twitch hasn't registered live yet
+    COMMERCIAL_RETRY_DELAY_SECONDS = 20
+    # Minimum gap between two ad fires. Guards against the manual !ad and the auto
+    # scheduler (or a duplicated chat event) both firing within Twitch's commercial
+    # cooldown and tripping a 429. Covers the longest ad (180s) plus a margin.
+    COMMERCIAL_DEDUP_SECONDS = 200
+
+
+class AdReplies:
+    """User-facing chat replies for the !ad command."""
+
+    NO_ACTIVE_SESSION = "⚠️ No active stream session."
+    QUOTA_MET = "Ad quota already met this hour."
+    USAGE = "Usage: !ad [minutes] — e.g. !ad 1.5 for 90s"
+    JUST_RAN = "⏳ An ad just ran — skipping to avoid a Twitch cooldown."
+    COOLDOWN = "⏳ Twitch ad cooldown still active.{wait}"
+    COOLDOWN_RETRY = " Try again in ~{minutes} min."
+    FAILED = "❌ Failed to run ad — Twitch returned an error."
+    BREAK = "🎬 Ad break — back at {return_time}!"
 
 
 class LeetCodeConfig:

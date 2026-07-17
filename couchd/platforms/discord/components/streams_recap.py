@@ -29,18 +29,24 @@ class _Segment:
     tasks: list[tuple[str, str | None]] = dc_field(default_factory=list)
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """Treat naive datetimes (e.g. from drivers that drop tzinfo) as UTC."""
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
 def _duration_str(session: StreamSession) -> str:
     if not session.start_time:
         return "Unknown"
-    end = session.end_time or datetime.now(timezone.utc)
-    total_seconds = int((end - session.start_time).total_seconds())
+    start = _as_utc(session.start_time)
+    end = _as_utc(session.end_time) if session.end_time else datetime.now(timezone.utc)
+    total_seconds = int((end - start).total_seconds())
     hours, remainder = divmod(total_seconds, 3600)
     minutes, _ = divmod(remainder, 60)
     return f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
 
 
 def _format_elapsed(ts: datetime, start: datetime) -> str:
-    total = max(0, int((ts - start).total_seconds()))
+    total = max(0, int((_as_utc(ts) - _as_utc(start)).total_seconds()))
     h, rem = divmod(total, 3600)
     m, s = divmod(rem, 60)
     return f"{h}:{m:02}:{s:02}" if h else f"{m}:{s:02}"

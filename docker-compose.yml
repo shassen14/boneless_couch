@@ -23,6 +23,28 @@ services:
       - 1.1.1.1
       - 8.8.8.8
 
+  # content_os read API — exposes session/marker/recap data on :4344 so content_os
+  # can browse streams and scaffold VOD edit projects. Binds only when API_SECRET is
+  # set in .env (the feature flag). See content_os/docs/streams_setup.md.
+  couch-api:
+    image: boneless-couch
+    volumes:
+      - ./.env:/app/.env:ro
+    command: python -m couchd.api.main
+    ports:
+      - "4344:4344"
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    healthcheck:
+      # Health is auth-exempt; this exits non-zero if the API isn't serving.
+      test: ["CMD", "python", "-c", "import urllib.request,os; urllib.request.urlopen(f\"http://localhost:{os.getenv('API_PORT','4344')}/api/v1/health\").read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   # YouTube bot disabled until a quota increase is approved — default 10k units/day
   # is exhausted in ~1h of streaming. Re-enable after the increase lands.
   # youtube:

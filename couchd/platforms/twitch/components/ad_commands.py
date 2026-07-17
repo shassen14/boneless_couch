@@ -2,6 +2,8 @@
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
+from http import HTTPStatus
+from twitchio.exceptions import HTTPException
 from twitchio.ext import commands
 
 from couchd.core.clients.youtube import YouTubeRSSClient
@@ -9,6 +11,7 @@ from couchd.platforms.twitch.ads.manager import AdBudgetManager
 from couchd.platforms.twitch.ads.messages import pick_ad_message, pick_return_message
 from couchd.platforms.twitch.components.utils import clamp_to_ad_duration, send_chat_message
 from couchd.core.utils import get_active_session, compute_vod_timestamp
+from couchd.core.constants import AdReplies
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +26,26 @@ class AdCommands(commands.Component):
         self.bot = bot
         self.ad_manager = ad_manager
         self.youtube_client = youtube_client
+        self._return_tasks: set[asyncio.Task] = set()
+
+    def _parse_duration(self, content: str, remaining: int) -> int | None:
+        """Seconds to run, clamped to remaining budget; None if the arg is invalid."""
+        args = content.split()
+        if len(args) <= 1:
+            return clamp_to_ad_duration(remaining)
+        try:
+            requested = round(float(args[1]) * 60)
+        except ValueError:
+            return None
+        if requested <= 0:
+            return None
+        return clamp_to_ad_duration(min(requested, remaining))
+
+    async def _fail(self, ctx: commands.Context) -> None:
+        """Release the reservation and report a generic failure."""
+        self.ad_manager.release_fire()
+        log.error("Failed to run ad", exc_info=True)
+        await ctx.reply(AdReplies.FAILED)
 
     @commands.command(name="ad")
     async def run_ad(self, ctx: commands.Context):
@@ -35,42 +58,49 @@ class AdCommands(commands.Component):
 
         active_session = await get_active_session()
         if not active_session:
-            await ctx.reply("⚠️ No active stream session.")
+            await ctx.reply(AdReplies.NO_ACTIVE_SESSION)
             return
 
-        args = ctx.content.split()
         remaining = await self.ad_manager.get_remaining(active_session.id, active_session.start_time)
-        if len(args) > 1:
-            try:
-                minutes = float(args[1])
-            except ValueError:
-                await ctx.reply("Usage: !ad [minutes] — e.g. !ad 1.5 for 90s")
-                return
-            requested = round(minutes * 60)
-            if remaining == 0:
-                await ctx.reply("Ad quota already met this hour.")
-                return
-            duration_seconds = clamp_to_ad_duration(min(requested, remaining))
-        else:
-            if remaining == 0:
-                await ctx.reply("Ad quota already met this hour.")
-                return
-            duration_seconds = clamp_to_ad_duration(remaining)
+        if remaining == 0:
+            await ctx.reply(AdReplies.QUOTA_MET)
+            return
+
+        duration_seconds = self._parse_duration(ctx.content, remaining)
+        if duration_seconds is None:
+            await ctx.reply(AdReplies.USAGE)
+            return
+
+        # Cancel any scheduled auto-ad and claim the fire slot before calling Twitch
+        # so the manual ad and the scheduler can't both fire and trip a 429.
+        self.ad_manager.cancel_pending()
+        if not self.ad_manager.try_reserve_fire():
+            await ctx.reply(AdReplies.JUST_RAN)
+            return
 
         try:
             await ctx.channel.start_commercial(length=duration_seconds)
-        except Exception as e:
-            log.error("Failed to run ad", exc_info=True)
-            await ctx.reply(f"❌ Failed to run ad: {e}")
+        except HTTPException as e:
+            # The commercial never started, so free the reservation for a retry.
+            if e.status == HTTPStatus.TOO_MANY_REQUESTS:
+                self.ad_manager.release_fire()
+                retry_after = e.extra.get("retry_after") if isinstance(e.extra, dict) else None
+                wait = AdReplies.COOLDOWN_RETRY.format(minutes=round(retry_after / 60)) if retry_after else ""
+                log.info("Ad on Twitch cooldown (retry_after=%s).", retry_after)
+                await ctx.reply(AdReplies.COOLDOWN.format(wait=wait))
+                return
+            await self._fail(ctx)
+            return
+        except Exception:
+            await self._fail(ctx)
             return
 
         vod_ts = compute_vod_timestamp(active_session.start_time)
         await self.ad_manager.log_ad(active_session.id, duration_seconds, vod_ts)
-        self.ad_manager.cancel_pending()
 
         ends_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds)
         return_time = ends_at.astimezone().strftime("%-I:%M %p")
-        await ctx.reply(f"🎬 Ad break — back at {return_time}!")
+        await ctx.reply(AdReplies.BREAK.format(return_time=return_time))
         log.info("Triggered %ds ad break.", duration_seconds)
 
         latest_video = (
@@ -86,4 +116,6 @@ class AdCommands(commands.Component):
             await asyncio.sleep(duration_seconds)
             await send_chat_message(self.bot, pick_return_message())
 
-        asyncio.create_task(_notify_return())
+        task = asyncio.create_task(_notify_return())
+        self._return_tasks.add(task)
+        task.add_done_callback(self._return_tasks.discard)

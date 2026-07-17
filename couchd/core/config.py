@@ -105,6 +105,18 @@ class Settings(BaseSettings):
     # Disabled until py-cord ships a stable fix for Discord voice protocol (close code 4017).
     VOICE_SPEAKING_ENABLED: bool = False
 
+    # content_os read API server. Exposes session/marker/recap data so content_os
+    # can scaffold VOD edit projects. Running the `couch-api` process/compose service
+    # is the on-switch — no flag. API_SECRET is OPTIONAL: set it to require a bearer
+    # token, or leave it blank to run open (only safe on a trusted LAN).
+    API_HOST: str = "0.0.0.0"
+    API_PORT: int = 4344
+    API_SECRET: str | None = None  # optional bearer token; None → no auth required
+
+    # Outbound notifications to content_os (optional — omit URL to disable).
+    CONTENT_OS_API_URL: str | None = None  # e.g. http://pi.local:8000
+    CONTENT_OS_API_SECRET: str | None = None  # bearer token for outbound calls
+
 
 # Create a single, importable instance of our settings.
 # This instance will be created only once when the module is first imported.
