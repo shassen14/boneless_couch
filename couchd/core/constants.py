@@ -218,6 +218,9 @@ class HoldSource:
 class TwitchBotConfig:
     SUBSCRIPTION_HEALTH_CHECK_SECONDS: int = 300
     STREAM_OPENER_MESSAGE: str = "🔴 Now live: {title} — Playing {category}"
+    # Number of recent chat message ids remembered to drop duplicate deliveries
+    # (duplicate eventsub sockets deliver each message more than once).
+    MESSAGE_DEDUP_WINDOW: int = 256
 
 
 class BrandColors:

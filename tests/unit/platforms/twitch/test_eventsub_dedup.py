@@ -1,12 +1,51 @@
 # tests/unit/platforms/twitch/test_eventsub_dedup.py
+from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from twitchio.ext import commands
+
 from couchd.platforms.twitch.main import TwitchBot
 
 _MOD = "couchd.platforms.twitch.main"
+
+
+def _dispatch_bot():
+    """Real TwitchBot instance (so super().dispatch resolves) without the heavy
+    __init__, carrying just the dedup buffer the override touches."""
+    bot = TwitchBot.__new__(TwitchBot)
+    bot._seen_message_ids = deque(maxlen=8)
+    return bot
+
+
+def test_dispatch_drops_duplicate_message():
+    """A message id delivered twice (duplicate sockets) reaches listeners once."""
+    bot = _dispatch_bot()
+    msg = SimpleNamespace(id="abc")
+    with patch.object(commands.Bot, "dispatch") as parent:
+        bot.dispatch("message", msg)
+        bot.dispatch("message", msg)
+    parent.assert_called_once_with("message", msg)
+
+
+def test_dispatch_passes_distinct_messages():
+    bot = _dispatch_bot()
+    with patch.object(commands.Bot, "dispatch") as parent:
+        bot.dispatch("message", SimpleNamespace(id="a"))
+        bot.dispatch("message", SimpleNamespace(id="b"))
+    assert parent.call_count == 2
+
+
+def test_dispatch_never_dedupes_non_message_events():
+    """Non-chat events share no id semantics and must always pass through."""
+    bot = _dispatch_bot()
+    payload = SimpleNamespace(id="same")
+    with patch.object(commands.Bot, "dispatch") as parent:
+        bot.dispatch("follow", payload)
+        bot.dispatch("follow", payload)
+    assert parent.call_count == 2
 
 
 def _socket(connected, count):

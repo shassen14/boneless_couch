@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import aiohttp
+from collections import deque
 from datetime import datetime, timezone
 import twitchio
 from twitchio import eventsub
@@ -122,6 +123,24 @@ class TwitchBot(commands.Bot):
         # subscriptions that each deliver the same go-live. Both carry an identical
         # started_at, so we process only the first per live transition.
         self._online_started_at: datetime | None = None
+        # Dedupes chat messages: duplicate eventsub sockets deliver each message more
+        # than once, which would run every command (and metrics/moderation) twice.
+        # Track recent message ids and drop repeats at dispatch — see dispatch().
+        self._seen_message_ids: deque[str] = deque(maxlen=TwitchBotConfig.MESSAGE_DEDUP_WINDOW)
+
+    def dispatch(self, event: str, payload=None) -> None:
+        """Drop duplicate chat-message deliveries at the single fan-out point so
+        commands, metrics, and moderation each run once. ``dispatch`` is the one
+        funnel feeding both the command processor and component listeners, so
+        deduping here covers every consumer regardless of how many eventsub
+        sockets deliver the same message."""
+        if event == "message" and payload is not None:
+            mid = getattr(payload, "id", None)
+            if mid is not None:
+                if mid in self._seen_message_ids:
+                    return
+                self._seen_message_ids.append(mid)
+        super().dispatch(event, payload)
 
     async def setup_hook(self) -> None:
         await self.lc_client.load_ratings()
