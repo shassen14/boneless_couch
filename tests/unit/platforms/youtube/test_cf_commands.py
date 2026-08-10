@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select
 
+from couchd.core.clients import codeforces
 from couchd.core.models import CFProblemAttempt, StreamEvent
 from couchd.platforms.youtube.components.cf_commands import CFCommands
 
@@ -51,42 +52,68 @@ async def test_show_current(cog, get_session_fn, db_session, stream_session):
     with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)), \
          patch(f"{_MOD}.get_session", get_session_fn):
         await cog.cmd_cf(ctx)
-    ctx.reply.assert_awaited_once_with("P → http://cf/1/A")
+    ctx.reply.assert_awaited_once_with("📌 1A · P → http://cf/1/A")
+
+
+def _patch_cf_client(resolved):
+    """Patch the client module but keep the real describe() formatting."""
+    patcher = patch(f"{_MOD}.cf_client")
+    cf = patcher.start()
+    cf.resolve_problem = AsyncMock(return_value=resolved)
+    cf.describe = codeforces.describe
+    return patcher, cf
 
 
 async def test_log_non_privileged_ignored(cog):
     ctx = _ctx("!cf http://cf/1/A")
-    with patch(f"{_MOD}.cf_client") as cf:
+    patcher, cf = _patch_cf_client(None)
+    try:
         await cog.cmd_cf(ctx)
-    cf.parse_problem_url.assert_not_called()
+    finally:
+        patcher.stop()
+    cf.resolve_problem.assert_not_called()
 
 
 async def test_log_invalid_url(cog):
     ctx = _ctx("!cf bogus", broadcaster=True)
-    with patch(f"{_MOD}.cf_client") as cf:
-        cf.parse_problem_url = MagicMock(return_value=None)
+    patcher, _ = _patch_cf_client(None)
+    try:
         await cog.cmd_cf(ctx)
+    finally:
+        patcher.stop()
     ctx.reply.assert_awaited_once_with("❌ Invalid Codeforces problem URL.")
-
-
-async def test_log_fetch_failure(cog):
-    ctx = _ctx("!cf http://cf/1/A", moderator=True)
-    with patch(f"{_MOD}.cf_client") as cf:
-        cf.parse_problem_url = MagicMock(return_value=(1, "A"))
-        cf.fetch_problem = AsyncMock(return_value=None)
-        await cog.cmd_cf(ctx)
-    ctx.reply.assert_awaited_once_with("❌ Could not fetch problem info from Codeforces.")
 
 
 async def test_log_persists(cog, get_session_fn, db_session, stream_session):
     ctx = _ctx("!cf http://cf/1/A", broadcaster=True)
-    with patch(f"{_MOD}.cf_client") as cf, \
-         patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)), \
-         patch(f"{_MOD}.get_session", get_session_fn):
-        cf.parse_problem_url = MagicMock(return_value=(1, "A"))
-        cf.fetch_problem = AsyncMock(return_value={"title": "P", "rating": 900, "tags": ["dp"]})
-        cf.problem_url = MagicMock(return_value="http://cf/1/A")
-        await cog.cmd_cf(ctx)
+    patcher, _ = _patch_cf_client({
+        "contest_id": 1, "index": "A", "url": "http://cf/1/A",
+        "title": "P", "rating": 900, "tags": ["dp"],
+    })
+    try:
+        with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)), \
+             patch(f"{_MOD}.get_session", get_session_fn):
+            await cog.cmd_cf(ctx)
+    finally:
+        patcher.stop()
     rows = (await db_session.execute(select(CFProblemAttempt))).scalars().all()
     assert len(rows) == 1 and rows[0].tags == "dp"
-    assert "900" in ctx.reply.call_args.args[0]
+    assert ctx.reply.call_args.args[0] == "✅ CF: 1A · P · 900 → http://cf/1/A"
+
+
+async def test_log_passes_trailing_text_as_title(cog, get_session_fn, db_session, stream_session):
+    """Gym/edu problems carry no API metadata, so the typed title is forwarded."""
+    ctx = _ctx("!cf http://cf/gym/1/A My Problem", broadcaster=True)
+    patcher, cf = _patch_cf_client({
+        "contest_id": 1, "index": "A", "url": "http://cf/gym/1/A",
+        "title": "My Problem", "rating": None, "tags": [],
+    })
+    try:
+        with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)), \
+             patch(f"{_MOD}.get_session", get_session_fn):
+            await cog.cmd_cf(ctx)
+    finally:
+        patcher.stop()
+    cf.resolve_problem.assert_awaited_once_with("http://cf/gym/1/A", "My Problem")
+    rows = (await db_session.execute(select(CFProblemAttempt))).scalars().all()
+    assert len(rows) == 1 and rows[0].title == "My Problem" and rows[0].tags is None

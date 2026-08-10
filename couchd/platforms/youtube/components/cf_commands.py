@@ -17,7 +17,7 @@ class CFCommands:
         self.cooldowns = CooldownManager()
 
     async def cmd_cf(self, ctx) -> None:
-        """!cf — show current CF problem. !cf <url> — log CF problem (mod/broadcaster only)."""
+        """!cf — show current CF problem. !cf <url> [title] — log it (mod/broadcaster only)."""
         args = ctx.content.split(maxsplit=1)
 
         if len(args) < 2:
@@ -41,25 +41,23 @@ class CFCommands:
             if not attempt:
                 await ctx.reply("No Codeforces problem logged yet this stream.")
             else:
-                await ctx.reply(f"{attempt.title} → {attempt.url}")
+                description = cf_client.describe(
+                    attempt.problem_id, attempt.title, attempt.rating
+                )
+                await ctx.reply(f"📌 {description} → {attempt.url}")
             return
 
         if not ctx.author.broadcaster and not ctx.author.moderator:
             return
 
-        url = args[1].strip()
-        parsed = cf_client.parse_problem_url(url)
-        if not parsed:
+        url, _, title = args[1].strip().partition(" ")
+        problem = await cf_client.resolve_problem(url, title.strip() or None)
+        if not problem:
             await ctx.reply("❌ Invalid Codeforces problem URL.")
             return
 
-        contest_id, index = parsed
-        problem = await cf_client.fetch_problem(contest_id, index)
-        if not problem:
-            await ctx.reply("❌ Could not fetch problem info from Codeforces.")
-            return
-
-        canonical_url = cf_client.problem_url(contest_id, index)
+        contest_id, index = problem["contest_id"], problem["index"]
+        canonical_url = problem["url"]
         active_session = await get_active_session()
         if not active_session:
             await ctx.reply("⚠️ No active stream session.")
@@ -92,6 +90,8 @@ class CFCommands:
             await ctx.reply("❌ Failed to save to DB.")
             return
 
-        rating_str = f" · {problem['rating']}" if problem["rating"] else ""
-        await ctx.reply(f"✅ CF: {problem['title']}{rating_str} → {canonical_url}")
+        description = cf_client.describe(
+            f"{contest_id}{index}", problem["title"], problem["rating"]
+        )
+        await ctx.reply(f"✅ CF: {description} → {canonical_url}")
         log.info("Logged CF problem %d%s: %s", contest_id, index, problem["title"])

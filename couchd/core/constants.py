@@ -185,6 +185,10 @@ class BotConfig:
 class CFConfig:
     BASE_URL = "https://codeforces.com"
     API_BASE = "https://codeforces.com/api"
+    REQUEST_TIMEOUT_SECONDS: int = 10
+    # problemset.problems and contest.standings return multi-MB payloads.
+    BULK_TIMEOUT_SECONDS: int = 30
+    PROBLEMSET_CACHE_TTL_SECONDS: float = 6 * 60 * 60
 
 
 class CFProblemsConfig:

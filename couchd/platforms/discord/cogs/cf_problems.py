@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from couchd.core.config import settings
 from couchd.core.db import get_session
 from couchd.core.models import GuildConfig, StreamEvent, CFProblemAttempt
-from couchd.core.constants import CFProblemsConfig
+from couchd.core.constants import CFConfig, CFProblemsConfig
 from couchd.core.clients import codeforces as cf_client
 from couchd.core.utils import get_active_session, compute_vod_timestamp
 from couchd.platforms.discord.components.cf_problems_forum import sync_cf_problem
@@ -103,7 +103,7 @@ class CFProblemsWatcherCog(commands.Cog):
         ]
 
         for sub in matching:
-            sub_url = f"{cf_client._CF_BASE}/contest/{sub['contest_id']}/submission/{sub['submission_id']}"
+            sub_url = f"{CFConfig.BASE_URL}/contest/{sub['contest_id']}/submission/{sub['submission_id']}"
             vod_ts = compute_vod_timestamp(active_session.start_time)
             async with get_session() as db:
                 existing = (

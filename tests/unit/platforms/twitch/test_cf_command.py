@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select
 
+from couchd.core.clients import codeforces
 from couchd.core.models import CFProblemAttempt, StreamEvent
 from couchd.platforms.twitch.components.cf_commands import CFCommands
 
@@ -61,53 +62,85 @@ async def test_show_current(cog, get_session_fn, db_session, stream_session):
          patch(f"{_MOD}.get_session", get_session_fn):
         await _run(cog, ctx)
     ctx.reply.assert_awaited_once_with(
-        "Factorial → https://codeforces.com/problemset/problem/1700/A"
+        "📌 1700A · Factorial → https://codeforces.com/problemset/problem/1700/A"
     )
 
 
 # ── !cf <url> (log) ───────────────────────────────────────────────────────────
 
+def _patch_cf_client(resolved):
+    """Patch the client module but keep the real describe() formatting."""
+    patcher = patch(f"{_MOD}.cf_client")
+    cf = patcher.start()
+    cf.resolve_problem = AsyncMock(return_value=resolved)
+    cf.describe = codeforces.describe
+    return patcher, cf
+
+
 async def test_log_non_privileged_ignored(cog):
     ctx = _ctx("!cf https://codeforces.com/problemset/problem/1700/A")
-    with patch(f"{_MOD}.cf_client") as cf:
+    patcher, cf = _patch_cf_client(None)
+    try:
         await _run(cog, ctx)
-    cf.parse_problem_url.assert_not_called()
+    finally:
+        patcher.stop()
+    cf.resolve_problem.assert_not_called()
     ctx.reply.assert_not_awaited()
 
 
 async def test_log_invalid_url(cog):
     ctx = _ctx("!cf bogus", broadcaster=True)
-    with patch(f"{_MOD}.cf_client") as cf:
-        cf.parse_problem_url = MagicMock(return_value=None)
+    patcher, _ = _patch_cf_client(None)
+    try:
         await _run(cog, ctx)
+    finally:
+        patcher.stop()
     ctx.reply.assert_awaited_once_with("❌ Invalid Codeforces problem URL.")
-
-
-async def test_log_fetch_failure(cog):
-    ctx = _ctx("!cf https://codeforces.com/problemset/problem/1700/A", moderator=True)
-    with patch(f"{_MOD}.cf_client") as cf:
-        cf.parse_problem_url = MagicMock(return_value=(1700, "A"))
-        cf.fetch_problem = AsyncMock(return_value=None)
-        await _run(cog, ctx)
-    ctx.reply.assert_awaited_once_with("❌ Could not fetch problem info from Codeforces.")
 
 
 async def test_log_persists_and_replies(cog, get_session_fn, db_session, stream_session):
     ctx = _ctx("!cf https://codeforces.com/problemset/problem/1700/A", broadcaster=True)
-    with patch(f"{_MOD}.cf_client") as cf, \
-         patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)), \
-         patch(f"{_MOD}.get_session", get_session_fn):
-        cf.parse_problem_url = MagicMock(return_value=(1700, "A"))
-        cf.fetch_problem = AsyncMock(return_value={
-            "title": "Factorial", "rating": 800, "tags": ["math", "greedy"],
-        })
-        cf.problem_url = MagicMock(return_value="https://codeforces.com/problemset/problem/1700/A")
-        await _run(cog, ctx)
+    patcher, _ = _patch_cf_client({
+        "contest_id": 1700, "index": "A",
+        "url": "https://codeforces.com/contest/1700/problem/A",
+        "title": "Factorial", "rating": 800, "tags": ["math", "greedy"],
+    })
+    try:
+        with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)), \
+             patch(f"{_MOD}.get_session", get_session_fn):
+            await _run(cog, ctx)
+    finally:
+        patcher.stop()
 
     rows = (await db_session.execute(select(CFProblemAttempt))).scalars().all()
     assert len(rows) == 1
     assert rows[0].title == "Factorial"
     assert rows[0].contest_id == 1700
     assert rows[0].tags == "math, greedy"
-    assert "Factorial" in ctx.reply.call_args.args[0]
-    assert "800" in ctx.reply.call_args.args[0]
+    assert ctx.reply.call_args.args[0] == (
+        "✅ CF: 1700A · Factorial · 800 → https://codeforces.com/contest/1700/problem/A"
+    )
+
+
+async def test_log_unrated_problem_passes_typed_title(cog, get_session_fn, db_session, stream_session):
+    """Gym/edu problems have no API metadata; the trailing text becomes the title."""
+    url = "https://codeforces.com/edu/course/2/lesson/7/1/practice/contest/289390/problem/C"
+    ctx = _ctx(f"!cf {url} Number of Inversions", broadcaster=True)
+    patcher, cf = _patch_cf_client({
+        "contest_id": 289390, "index": "C", "url": url,
+        "title": "Number of Inversions", "rating": None, "tags": [],
+    })
+    try:
+        with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)), \
+             patch(f"{_MOD}.get_session", get_session_fn):
+            await _run(cog, ctx)
+    finally:
+        patcher.stop()
+
+    cf.resolve_problem.assert_awaited_once_with(url, "Number of Inversions")
+    rows = (await db_session.execute(select(CFProblemAttempt))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].title == "Number of Inversions"
+    assert rows[0].url == url
+    assert rows[0].rating is None
+    assert ctx.reply.call_args.args[0] == f"✅ CF: 289390C · Number of Inversions → {url}"

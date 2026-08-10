@@ -39,7 +39,7 @@ async def build_cf_embed(problem_id: str):
         name=f"Appearances ({len(attempts)})", value=appearances, inline=False
     )
 
-    thread_name = first.title[: CFProblemsConfig.TITLE_MAX_LEN]
+    thread_name = f"{problem_id} · {first.title}"[: CFProblemsConfig.TITLE_MAX_LEN]
     return thread_name, embed, attempts
 
 
