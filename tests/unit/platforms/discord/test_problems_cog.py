@@ -215,3 +215,40 @@ async def test_poll_duplicate_submission_skips_insert(cog):
         await cog._poll_streamer_solutions()
 
     db.add.assert_not_called()
+
+
+# ── watermark seeding ────────────────────────────────────────────────────────
+
+def _make_watermark_db(max_id):
+    db = AsyncMock()
+    db.execute = AsyncMock(
+        return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=max_id))
+    )
+
+    @asynccontextmanager
+    async def _gs():
+        yield db
+
+    return _gs, db
+
+
+async def test_watermark_seeds_from_max_attempt_id(cog):
+    gs, _ = _make_watermark_db(42)
+    with patch("couchd.platforms.discord.cogs.problems.get_session", gs):
+        await cog._seed_watermark()
+    assert cog.last_processed_attempt_id == 42
+
+
+async def test_watermark_is_not_reseeded_on_reconnect(cog):
+    """on_ready fires again after a reconnect; re-seeding would skip unposted attempts."""
+    gs, _ = _make_watermark_db(42)
+    with patch("couchd.platforms.discord.cogs.problems.get_session", gs):
+        await cog._seed_watermark()
+        cog.last_processed_attempt_id = 42  # nothing new processed yet
+
+        gs_later, db_later = _make_watermark_db(99)  # attempt 99 logged, not yet posted
+        with patch("couchd.platforms.discord.cogs.problems.get_session", gs_later):
+            await cog._seed_watermark()
+
+    db_later.execute.assert_not_called()
+    assert cog.last_processed_attempt_id == 42

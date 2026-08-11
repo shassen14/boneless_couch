@@ -185,10 +185,19 @@ class BotConfig:
 class CFConfig:
     BASE_URL = "https://codeforces.com"
     API_BASE = "https://codeforces.com/api"
+    # CF localises problem names by the caller's IP, so a non-US host gets Russian
+    # titles. Every method except contest.standings accepts an explicit lang.
+    LANG = "en"
     REQUEST_TIMEOUT_SECONDS: int = 10
     # problemset.problems and contest.standings return multi-MB payloads.
-    BULK_TIMEOUT_SECONDS: int = 30
+    BULK_TIMEOUT_SECONDS: int = 45
     PROBLEMSET_CACHE_TTL_SECONDS: float = 6 * 60 * 60
+    # CF answers bursts with an HTML error page instead of JSON; back off and retry.
+    MAX_ATTEMPTS: int = 3
+    RETRY_BACKOFF_SECONDS: float = 2.0
+    # Don't re-run a failed multi-MB archive fetch on every command.
+    PROBLEMSET_RETRY_SECONDS: float = 5 * 60
+    NON_JSON_LOG_CHARS: int = 200
 
 
 class CFProblemsConfig:

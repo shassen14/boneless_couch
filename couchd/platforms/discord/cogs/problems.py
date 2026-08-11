@@ -23,6 +23,7 @@ class ProblemsWatcherCog(commands.Cog):
         self.bot = bot
         self.lc_client = LeetCodeClient()
         self.last_processed_attempt_id: int = 0
+        self.watermark_seeded: bool = False
         self.check_problems.start()
 
     def cog_unload(self):
@@ -33,6 +34,12 @@ class ProblemsWatcherCog(commands.Cog):
         await self._seed_watermark()
 
     async def _seed_watermark(self):
+        # on_ready fires again after every gateway reconnect. Re-seeding there would
+        # skip past any attempt logged since the last poll, so it never gets posted.
+        if self.watermark_seeded:
+            return
+        self.watermark_seeded = True
+
         async with get_session() as db:
             result = await db.execute(select(func.max(ProblemAttempt.id)))
             max_id = result.scalar_one_or_none()

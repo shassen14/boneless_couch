@@ -1,4 +1,5 @@
 # tests/unit/core/clients/test_codeforces_client.py
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -6,9 +7,14 @@ import pytest
 from couchd.core.clients import codeforces
 
 
-def _make_aiohttp_mock(json_data: dict):
+def _make_aiohttp_mock(json_data: dict, status: int = 200):
+    return _make_aiohttp_text_mock(json.dumps(json_data), status)
+
+
+def _make_aiohttp_text_mock(body: str, status: int = 200):
     mock_resp = AsyncMock()
-    mock_resp.json = AsyncMock(return_value=json_data)
+    mock_resp.status = status
+    mock_resp.text = AsyncMock(return_value=body)
 
     mock_get_cm = AsyncMock()
     mock_get_cm.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -29,9 +35,18 @@ def _clear_problemset_cache():
     """The archive cache is module-level; keep it from leaking between tests."""
     codeforces._problemset.clear()
     codeforces._problemset_fetched_at = 0.0
+    codeforces._problemset_failed_at = 0.0
     yield
     codeforces._problemset.clear()
     codeforces._problemset_fetched_at = 0.0
+    codeforces._problemset_failed_at = 0.0
+
+
+@pytest.fixture(autouse=True)
+def _no_retry_backoff():
+    """Retries are real sleeps in production; tests should not pay for them."""
+    with patch.object(codeforces.asyncio, "sleep", AsyncMock()):
+        yield
 
 
 # ── parse_problem_url ────────────────────────────────────────────────────────
@@ -195,6 +210,56 @@ async def test_fetch_problem_network_exception_returns_none():
     assert result is None
 
 
+# ── transport resilience ─────────────────────────────────────────────────────
+
+async def test_get_json_retries_html_error_page():
+    """CF answers bursts with an HTML page; retrying must recover rather than raise."""
+    session = _make_aiohttp_text_mock("<html>Codeforces is temporarily unavailable</html>", 503)
+    with patch("aiohttp.ClientSession", session):
+        assert await codeforces._get_json("http://x", 1) is None
+    assert session.call_count == codeforces.CFConfig.MAX_ATTEMPTS
+
+
+async def test_get_json_returns_first_successful_attempt():
+    ok = _make_aiohttp_mock({"status": "OK", "result": []})
+    bad = _make_aiohttp_text_mock("<html>429</html>", 429)
+    session = MagicMock(side_effect=[bad.return_value, ok.return_value])
+    with patch("aiohttp.ClientSession", session):
+        assert await codeforces._get_json("http://x", 1) == {"status": "OK", "result": []}
+    assert session.call_count == 2
+
+
+async def test_get_json_does_not_retry_a_valid_api_error():
+    session = _make_aiohttp_mock({"status": "FAILED", "comment": "nope"})
+    with patch("aiohttp.ClientSession", session):
+        assert await codeforces._get_json("http://x", 1) is None
+    assert session.call_count == 1
+
+
+async def test_failed_archive_fetch_is_not_retried_on_every_lookup():
+    """A multi-MB archive request must not be re-issued per command while it is failing."""
+    session = _make_aiohttp_text_mock("<html>503</html>", 503)
+    with patch("aiohttp.ClientSession", session):
+        await codeforces.fetch_problem(4, "A")
+        first = session.call_count
+        await codeforces.fetch_problem(4, "B")
+    # Only the per-problem standings fallback runs again; the archive stays backed off.
+    assert session.call_count - first == codeforces.CFConfig.MAX_ATTEMPTS
+
+
+async def test_stale_archive_survives_a_failed_refresh():
+    archive = {
+        "status": "OK",
+        "result": {"problems": [{"contestId": 1, "index": "A", "name": "Kept"}]},
+    }
+    with patch("aiohttp.ClientSession", _make_aiohttp_mock(archive)):
+        await codeforces.fetch_problem(1, "A")
+
+    codeforces._problemset_fetched_at = 0.0  # force the TTL to look expired
+    with patch("aiohttp.ClientSession", _make_aiohttp_text_mock("<html>503</html>", 503)):
+        assert (await codeforces.fetch_problem(1, "A"))["title"] == "Kept"
+
+
 # ── fetch_recent_ac_submissions ──────────────────────────────────────────────
 
 async def test_fetch_recent_ac_filters_non_ok_verdicts():
@@ -250,3 +315,20 @@ async def test_fetch_recent_ac_network_exception_returns_empty():
     with patch("aiohttp.ClientSession", side_effect=Exception("boom")):
         results = await codeforces.fetch_recent_ac_submissions("tourist")
     assert results == []
+
+
+# ── localisation ─────────────────────────────────────────────────────────────
+
+async def test_archive_and_submissions_requests_pin_english():
+    """CF localises names by caller IP; a non-US host gets Russian titles without lang."""
+    archive = _make_aiohttp_mock({"status": "OK", "result": {"problems": []}})
+    with patch("aiohttp.ClientSession", archive):
+        await codeforces._refresh_problemset()
+
+    status = _make_aiohttp_mock({"status": "OK", "result": []})
+    with patch("aiohttp.ClientSession", status):
+        await codeforces.fetch_recent_ac_submissions("tourist")
+
+    for session in (archive, status):
+        url = session.return_value.__aenter__.return_value.get.call_args.args[0]
+        assert f"lang={codeforces.CFConfig.LANG}" in url

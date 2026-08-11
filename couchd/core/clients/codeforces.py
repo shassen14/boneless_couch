@@ -1,4 +1,6 @@
 # couchd/core/clients/codeforces.py
+import asyncio
+import json
 import logging
 import re
 import time
@@ -75,19 +77,42 @@ def _matched_url(url: str, match: re.Match) -> str:
     return f"https://{url[match.start():match.end()]}"
 
 
-async def _get_json(url: str, timeout: int) -> dict | None:
+async def _fetch(url: str, timeout: int) -> dict | None:
+    """One attempt. None means transport failure or a non-JSON body (CF's HTML errors)."""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
-                data = await resp.json(content_type=None)
-    except Exception:
-        log.error("Codeforces request failed: %s", url, exc_info=True)
+                status, body = resp.status, await resp.text()
+    except Exception as exc:
+        log.warning("Codeforces request errored (%s: %s): %s", type(exc).__name__, exc, url)
         return None
 
-    if data.get("status") != "OK":
-        log.warning("CF API error for %s: %s", url, data.get("comment"))
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError:
+        log.warning(
+            "Codeforces returned non-JSON (HTTP %d) for %s: %s",
+            status,
+            url,
+            body[: CFConfig.NON_JSON_LOG_CHARS].replace("\n", " "),
+        )
         return None
-    return data
+
+
+async def _get_json(url: str, timeout: int) -> dict | None:
+    for attempt in range(CFConfig.MAX_ATTEMPTS):
+        if attempt:
+            await asyncio.sleep(CFConfig.RETRY_BACKOFF_SECONDS * attempt)
+        data = await _fetch(url, timeout)
+        if data is None:
+            continue
+        if data.get("status") != "OK":
+            log.warning("CF API error for %s: %s", url, data.get("comment"))
+            return None
+        return data
+
+    log.error("Codeforces request failed after %d attempts: %s", CFConfig.MAX_ATTEMPTS, url)
+    return None
 
 
 def _problem_info(problem: dict) -> dict:
@@ -100,27 +125,44 @@ def _problem_info(problem: dict) -> dict:
 
 _problemset: dict[tuple[int, str], dict] = {}
 _problemset_fetched_at: float = 0.0
+_problemset_failed_at: float = 0.0
+_problemset_lock = asyncio.Lock()
+
+
+def _problemset_due() -> bool:
+    now = time.monotonic()
+    if _problemset and now - _problemset_fetched_at < CFConfig.PROBLEMSET_CACHE_TTL_SECONDS:
+        return False
+    return now - _problemset_failed_at >= CFConfig.PROBLEMSET_RETRY_SECONDS
 
 
 async def _refresh_problemset() -> None:
     """Cache the whole non-gym problem archive; it is one cheap call for every problem."""
-    global _problemset_fetched_at
-    fresh = time.monotonic() - _problemset_fetched_at < CFConfig.PROBLEMSET_CACHE_TTL_SECONDS
-    if _problemset and fresh:
+    global _problemset_fetched_at, _problemset_failed_at
+    if not _problemset_due():
         return
 
-    data = await _get_json(
-        f"{CFConfig.API_BASE}/problemset.problems", CFConfig.BULK_TIMEOUT_SECONDS
-    )
-    if not data:
-        return
+    async with _problemset_lock:
+        # A concurrent caller may have refreshed while this one waited on the lock.
+        if not _problemset_due():
+            return
 
-    _problemset.clear()
-    for p in data.get("result", {}).get("problems", []):
-        contest_id, index = p.get("contestId"), p.get("index")
-        if contest_id and index:
-            _problemset[(contest_id, index.upper())] = _problem_info(p)
-    _problemset_fetched_at = time.monotonic()
+        data = await _get_json(
+            f"{CFConfig.API_BASE}/problemset.problems?lang={CFConfig.LANG}",
+            CFConfig.BULK_TIMEOUT_SECONDS,
+        )
+        if not data:
+            # Keep any stale entries — a slightly old archive beats no metadata at all.
+            _problemset_failed_at = time.monotonic()
+            return
+
+        _problemset.clear()
+        for p in data.get("result", {}).get("problems", []):
+            contest_id, index = p.get("contestId"), p.get("index")
+            if contest_id and index:
+                _problemset[(contest_id, index.upper())] = _problem_info(p)
+        _problemset_fetched_at = time.monotonic()
+        _problemset_failed_at = 0.0
 
 
 async def fetch_problem(contest_id: int, index: str) -> dict | None:
@@ -175,7 +217,10 @@ def describe(problem_id: str, title: str, rating: int | None) -> str:
 
 async def fetch_recent_ac_submissions(handle: str, count: int = 10) -> list[dict]:
     """Return recent accepted submissions for the given CF handle."""
-    url = f"{CFConfig.API_BASE}/user.status?handle={handle}&from=1&count={count}"
+    url = (
+        f"{CFConfig.API_BASE}/user.status"
+        f"?handle={handle}&from=1&count={count}&lang={CFConfig.LANG}"
+    )
     data = await _get_json(url, CFConfig.REQUEST_TIMEOUT_SECONDS)
     if not data:
         return []
