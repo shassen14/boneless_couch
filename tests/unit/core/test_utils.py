@@ -116,6 +116,22 @@ async def test_get_overlay_stats_picks_most_recent_per_type(db_session, get_sess
     assert stats["last_bits"]["bits"] == 100
 
 
+async def test_get_overlay_stats_last_follower_ignores_refollows(db_session, get_session_fn):
+    """A returning follower must not displace the most recent genuinely-new one."""
+    t0 = datetime(2024, 1, 1, tzinfo=_UTC)
+    db_session.add_all([
+        _vi(InteractionType.FOLLOW, "returner", timestamp=t0),
+        _vi(InteractionType.FOLLOW, "genuinely_new", timestamp=t0 + timedelta(hours=1)),
+        _vi(InteractionType.FOLLOW, "returner", timestamp=t0 + timedelta(hours=2)),
+    ])
+    await db_session.commit()
+
+    with patch("couchd.core.utils.get_session", get_session_fn):
+        stats = await get_overlay_stats()
+
+    assert stats["last_follower"]["username"] == "genuinely_new"
+
+
 async def test_get_overlay_stats_longest_subs_excludes_broadcaster_and_ranks(db_session, get_session_fn):
     t0 = datetime(2024, 1, 1, tzinfo=_UTC)
     rows = []

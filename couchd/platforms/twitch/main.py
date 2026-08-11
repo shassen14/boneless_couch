@@ -564,14 +564,15 @@ class TwitchBot(commands.Bot):
             ))
 
     async def event_follow(self, payload: twitchio.ChannelFollow) -> None:
-        await veil.post_event("twitch.follower", {
-            "username": payload.user.name,
-            "display_name": payload.user.display_name,
-        })
         session = await get_active_session()
-        if session:
-            await send_chat_message(self, follow_message(payload.user.display_name))
         async with get_session() as db:
+            returning = (await db.execute(
+                select(ViewerInteraction.id)
+                .where(ViewerInteraction.interaction_type == InteractionType.FOLLOW)
+                .where(ViewerInteraction.username == payload.user.name)
+                .limit(1)
+            )).scalar_one_or_none() is not None
+
             db.add(ViewerInteraction(
                 session_id=session.id if session else None,
                 interaction_type=InteractionType.FOLLOW,
@@ -579,6 +580,17 @@ class TwitchBot(commands.Bot):
                 display_name=payload.user.display_name,
                 timestamp=payload.followed_at,
             ))
+
+        if returning:
+            log.info("Re-follow from %s — alert suppressed.", payload.user.name)
+            return
+
+        await veil.post_event("twitch.follower", {
+            "username": payload.user.name,
+            "display_name": payload.user.display_name,
+        })
+        if session:
+            await send_chat_message(self, follow_message(payload.user.display_name))
 
     async def _on_tip(self, data: dict) -> None:
         username = data.get("username", "Anonymous")

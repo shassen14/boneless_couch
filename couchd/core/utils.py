@@ -37,9 +37,17 @@ async def get_overlay_stats() -> dict:
     # asyncpg serializes a single connection's queries at the wire anyway, so
     # these run sequentially (gather here would corrupt the session's state).
     async with get_session() as db:
+        # Only first-ever follows count: someone who unfollowed and re-followed is
+        # not a new follower and must not take the overlay slot from one.
+        first_follows = (
+            select(func.min(ViewerInteraction.id).label("id"))
+            .where(ViewerInteraction.interaction_type == InteractionType.FOLLOW)
+            .group_by(ViewerInteraction.username)
+            .subquery()
+        )
         last_follow = (await db.execute(
             select(ViewerInteraction)
-            .where(ViewerInteraction.interaction_type == InteractionType.FOLLOW)
+            .join(first_follows, ViewerInteraction.id == first_follows.c.id)
             .order_by(ViewerInteraction.timestamp.desc()).limit(1)
         )).scalars().first()
         last_raid = (await db.execute(
