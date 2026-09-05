@@ -168,8 +168,11 @@ class GeneralCommands(commands.Component):
                 await ctx.reply(f"{display} owns the place — no following required. 😎")
                 return
 
+            # Helix wants the broadcaster's *or a moderator's* token with
+            # moderator:read:followers — the bot account is a mod and holds that
+            # scope, the streamer token does not. See docs/twitch-setup.md.
             result = await owners[0].fetch_followers(
-                user=target_id, token_for=settings.TWITCH_OWNER_ID
+                user=target_id, token_for=settings.TWITCH_BOT_ID
             )
             follow = await anext(aiter(result.followers), None)
         except Exception:

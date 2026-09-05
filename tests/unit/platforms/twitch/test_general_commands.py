@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select
 
+from couchd.core.config import settings
 from couchd.core.models import ClipLog, IdeaPost
 from couchd.platforms.twitch.components.general_commands import GeneralCommands
 
@@ -249,11 +250,13 @@ def _owner_with_followers(bot, events, *, target=None):
 async def test_followage_reports_own_age(cog, bot):
     follow = MagicMock()
     follow.followed_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=40)
-    _owner_with_followers(bot, [follow])
+    owner = _owner_with_followers(bot, [follow])
 
     ctx = _ctx("!followage", uid="42", name="bob")
     await _run(type(cog).followage_command, cog, ctx)
     assert "Bob has been following for 1 month, 10 days" in ctx.reply.call_args.args[0]
+    # must use the bot's (moderator) token — only it holds moderator:read:followers
+    assert owner.fetch_followers.await_args.kwargs["token_for"] == settings.TWITCH_BOT_ID
 
 
 async def test_followage_not_following(cog, bot):
