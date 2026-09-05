@@ -164,6 +164,11 @@ class CommandCooldowns:
     SIMPLE = Cooldown(user_seconds=15, global_seconds=5)
 
 
+class FollowAgeConfig:
+    DAYS_PER_YEAR = 365
+    DAYS_PER_MONTH = 30
+
+
 class ClipConfig:
     DURATION = 30
     URL_BASE = "https://clips.twitch.tv/"

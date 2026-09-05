@@ -1,8 +1,9 @@
 # couchd/platforms/twitch/components/utils.py
+import datetime
 import logging
 
 from couchd.core.config import settings
-from couchd.core.constants import TwitchAdDuration
+from couchd.core.constants import FollowAgeConfig, TwitchAdDuration
 
 log = logging.getLogger(__name__)
 
@@ -27,3 +28,18 @@ def clamp_to_ad_duration(seconds: int) -> int:
         if v <= seconds:
             clamped = v
     return clamped
+
+
+def format_follow_age(followed_at: datetime.datetime) -> str:
+    """Render a follow date as a human phrase, e.g. "1 year, 2 months, 3 days"."""
+    delta = datetime.datetime.now(datetime.timezone.utc) - followed_at
+    years, rest = divmod(max(delta.days, 0), FollowAgeConfig.DAYS_PER_YEAR)
+    months, days = divmod(rest, FollowAgeConfig.DAYS_PER_MONTH)
+
+    parts = [
+        (years, "year"),
+        (months, "month"),
+        (days, "day"),
+    ]
+    named = [f"{value} {label}{'s' if value != 1 else ''}" for value, label in parts if value]
+    return ", ".join(named) if named else "less than a day"

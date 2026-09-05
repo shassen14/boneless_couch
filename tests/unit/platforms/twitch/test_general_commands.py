@@ -1,4 +1,5 @@
 # tests/unit/platforms/twitch/test_general_commands.py
+import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -155,6 +156,8 @@ async def test_shoutout_success(cog, bot):
     ctx = _ctx("!so cool", moderator=True)
     await _run(type(cog).shoutout_command, cog, ctx)
     owner.send_shoutout.assert_awaited_once()
+    # twitchio's fetch_users only accepts ids=/logins= — a wrong kwarg would TypeError
+    assert bot.fetch_users.await_args_list[0].kwargs == {"logins": ["cool"]}
     assert "twitch.tv/cool" in ctx.send.call_args.args[0]
 
 
@@ -222,3 +225,53 @@ async def test_clip_creation_failure_replies(cog, bot, stream_session):
     with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)):
         await _run(type(cog).clip_command, cog, ctx)
     ctx.reply.assert_awaited_once_with("❌ Could not create clip.")
+
+
+# ── followage ─────────────────────────────────────────────────────────────────
+
+def _followers(events):
+    async def _iter():
+        for e in events:
+            yield e
+
+    result = MagicMock()
+    result.followers = _iter()
+    return result
+
+
+def _owner_with_followers(bot, events, *, target=None):
+    owner = MagicMock()
+    owner.fetch_followers = AsyncMock(return_value=_followers(events))
+    bot.fetch_users = AsyncMock(side_effect=lambda **kw: [owner] if "ids" in kw else target)
+    return owner
+
+
+async def test_followage_reports_own_age(cog, bot):
+    follow = MagicMock()
+    follow.followed_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=40)
+    _owner_with_followers(bot, [follow])
+
+    ctx = _ctx("!followage", uid="42", name="bob")
+    await _run(type(cog).followage_command, cog, ctx)
+    assert "Bob has been following for 1 month, 10 days" in ctx.reply.call_args.args[0]
+
+
+async def test_followage_not_following(cog, bot):
+    _owner_with_followers(bot, [])
+    ctx = _ctx("!followage", uid="42", name="bob")
+    await _run(type(cog).followage_command, cog, ctx)
+    assert "not following" in ctx.reply.call_args.args[0]
+
+
+async def test_followage_unknown_target(cog, bot):
+    _owner_with_followers(bot, [], target=[])
+    ctx = _ctx("!followage @ghost", uid="42", name="bob")
+    await _run(type(cog).followage_command, cog, ctx)
+    assert "Could not find user 'ghost'" in ctx.reply.call_args.args[0]
+
+
+async def test_followage_api_failure_replies(cog, bot):
+    bot.fetch_users = AsyncMock(side_effect=Exception("api down"))
+    ctx = _ctx("!followage", uid="42", name="bob")
+    await _run(type(cog).followage_command, cog, ctx)
+    ctx.reply.assert_awaited_once_with("❌ Could not fetch follow age.")

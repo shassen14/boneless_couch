@@ -15,6 +15,7 @@
 | `!clip [title]` | Create a Twitch clip of this moment                      |
 | `!idea <text>`  | Submit a community idea to be voted on in Discord        |
 | `!newvideo`     | Show the latest YouTube upload                           |
+| `!followage [user]` | How long you (or another user) has followed the channel |
 | `!lurk`         | Let chat know you're lurking                             |
 | `!unlurk`       | Announce your return from lurk                           |
 | `!socials`      | Show all social links (Twitch, YouTube, GitHub, Discord) |

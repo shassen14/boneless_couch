@@ -1,4 +1,5 @@
 # tests/unit/platforms/twitch/test_components_utils.py
+import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -54,3 +55,25 @@ async def test_send_chat_message_swallows_errors():
     bot = MagicMock()
     bot.fetch_users = AsyncMock(side_effect=Exception("boom"))
     await utils.send_chat_message(bot, "hello")  # must not raise
+
+
+# ── format_follow_age ─────────────────────────────────────────────────────────
+
+def _ago(days: int):
+    return datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
+
+
+@pytest.mark.parametrize(
+    "days, expected",
+    [
+        (0, "less than a day"),
+        (1, "1 day"),
+        (5, "5 days"),
+        (30, "1 month"),
+        (65, "2 months, 5 days"),
+        (365, "1 year"),
+        (400, "1 year, 1 month, 5 days"),
+    ],
+)
+def test_format_follow_age(days, expected):
+    assert utils.format_follow_age(_ago(days)) == expected

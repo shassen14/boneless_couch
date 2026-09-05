@@ -9,6 +9,7 @@ from couchd.core.models import StreamEvent, ClipLog, IdeaPost
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.constants import CommandCooldowns, ClipConfig
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
+from couchd.platforms.twitch.components.utils import format_follow_age
 from couchd.core.utils import get_active_session, compute_vod_timestamp
 
 log = logging.getLogger(__name__)
@@ -138,6 +139,52 @@ class GeneralCommands(commands.Component):
         self.cooldowns.record("unlurk", ctx.author.id)
         await ctx.send(f"👀 {ctx.author.display_name} is back! Welcome back!")
 
+    @commands.command(name="followage")
+    async def followage_command(self, ctx: commands.Context):
+        """!followage [username] — how long you (or someone else) has followed."""
+        if self.cooldowns.check("followage", ctx.author.id, CommandCooldowns.SIMPLE):
+            return
+        self.cooldowns.record("followage", ctx.author.id)
+
+        args = ctx.content.split(maxsplit=1)
+        target_name = args[1].strip().lstrip("@") if len(args) >= 2 and args[1].strip() else None
+
+        try:
+            owners = await self.bot.fetch_users(ids=[settings.TWITCH_OWNER_ID])
+            if not owners:
+                await ctx.reply("❌ Could not look up the channel.")
+                return
+
+            if target_name:
+                targets = await self.bot.fetch_users(logins=[target_name])
+                if not targets:
+                    await ctx.reply(f"Could not find user '{target_name}'.")
+                    return
+                target_id, display = targets[0].id, targets[0].display_name
+            else:
+                target_id, display = ctx.author.id, ctx.author.display_name
+
+            if str(target_id) == str(settings.TWITCH_OWNER_ID):
+                await ctx.reply(f"{display} owns the place — no following required. 😎")
+                return
+
+            result = await owners[0].fetch_followers(
+                user=target_id, token_for=settings.TWITCH_OWNER_ID
+            )
+            follow = await anext(aiter(result.followers), None)
+        except Exception:
+            log.error("Failed to fetch follow age", exc_info=True)
+            await ctx.reply("❌ Could not fetch follow age.")
+            return
+
+        if not follow:
+            await ctx.reply(f"{display} is not following the channel yet. 💔")
+            return
+
+        await ctx.reply(
+            f"💜 {display} has been following for {format_follow_age(follow.followed_at)}!"
+        )
+
     @commands.command(name="so")
     async def shoutout_command(self, ctx: commands.Context):
         """!so <username> — give a manual shoutout (mod/broadcaster only)."""
@@ -151,7 +198,7 @@ class GeneralCommands(commands.Component):
 
         target_name = args[1].strip().lstrip("@")
         try:
-            targets = await self.bot.fetch_users(names=[target_name])
+            targets = await self.bot.fetch_users(logins=[target_name])
             if not targets:
                 await ctx.reply(f"Could not find user '{target_name}'.")
                 return
