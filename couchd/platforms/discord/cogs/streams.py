@@ -13,6 +13,7 @@ from couchd.core.db import get_session, get_listener_connection
 from couchd.core.models import StreamSession, GuildConfig
 from couchd.core.constants import Platform, StreamDefaults, StreamStatusEmbed, TwitchConfig, BrandColors
 from couchd.core.utils import get_active_session
+from couchd.core.vod import resolve_vod_url
 from couchd.core.clients.twitch import TwitchClient
 from couchd.core.clients import content_os as content_os_client
 from sqlalchemy import select, text
@@ -261,6 +262,28 @@ class StreamWatcherCog(commands.Cog):
                 if row:
                     row.discord_live_status_message_id = new_id
 
+    async def _record_vod_url(self, session_id: int, start_time) -> None:
+        """Resolve and persist this session's Twitch archive VOD URL.
+
+        Swallows every failure: the VOD may not be published yet, or may be
+        disabled for the channel. Either way the stream-end path continues.
+        """
+        if start_time is None:
+            return
+        try:
+            vod_url = await resolve_vod_url(TwitchClient(), self.channel, start_time)
+            if not vod_url:
+                return
+            async with get_session() as session:
+                row = await session.get(StreamSession, session_id)
+                if row is not None:
+                    row.vod_url = vod_url
+            log.info("Recorded vod_url for session %d: %s", session_id, vod_url)
+        except Exception:
+            log.warning(
+                "Failed to record vod_url for session %d", session_id, exc_info=True
+            )
+
     async def handle_stream_end(self, session_id: int | None = None):
         stream_session = None
 
@@ -282,9 +305,18 @@ class StreamWatcherCog(commands.Cog):
                     log.warning("handle_stream_end: session not found (id=%s).", session_id)
                     return
                 ended_session_id = stream_session.id
+                session_start = stream_session.start_time
+                existing_vod_url = stream_session.vod_url
         except Exception as e:
             log.error("Failed to fetch StreamSession for recap", exc_info=e)
             return
+
+        # Record the archive VOD URL before telling content_os the session is
+        # ready: without it a scaffold job downloads nothing and skips the
+        # session. Best-effort — a missing VOD never blocks the recap, and
+        # scripts/backfill_vod_urls.py can fill it in later.
+        if not existing_vod_url:
+            await self._record_vod_url(ended_session_id, session_start)
 
         # Signal content_os the session is available to scaffold (no-op unless
         # configured). Fired before the Discord branch so a missing stream

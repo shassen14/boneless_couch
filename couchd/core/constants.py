@@ -58,6 +58,24 @@ class TwitchConfig:
     THUMBNAIL_PLACEHOLDER_W = "{width}"
     THUMBNAIL_PLACEHOLDER_H = "{height}"
     BASE_URL = "https://twitch.tv/"
+    HELIX_BASE_URL = "https://api.twitch.tv/helix"
+
+
+class TwitchVodConfig:
+    """Resolving a stream session to its Twitch archive VOD.
+
+    Twitch sets an archive video's ``created_at`` to the moment the stream went
+    live, so matching a session to its VOD is a nearest-start-time lookup. The
+    tolerance absorbs the small skew between our EventSub go-live timestamp and
+    Twitch's own, and is wide enough to survive a brief reconnect at the top of
+    a stream without being wide enough to grab the previous day's VOD.
+    """
+
+    VIDEO_TYPE_ARCHIVE = "archive"
+    # How many recent videos to pull when searching for a session's VOD.
+    LOOKUP_LIMIT = 20
+    # Max |video.created_at - session.start_time| still considered the same stream.
+    MATCH_TOLERANCE_SECONDS = 900
 
 
 class TwitchAdDuration(int, Enum):

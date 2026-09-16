@@ -57,6 +57,7 @@ async def test_posts_session_id_with_bearer(monkeypatch, fake_aiohttp):
     monkeypatch.setattr(client.settings, "CONTENT_OS_API_SECRET", "s3cret")
     await client.notify_session_end(31)
     call = _FakeSession.last_call
-    assert call["url"] == "http://pi.local:8000/api/ingest/session-available"
+    # Must match the router mount in content_os api/main.py: /api/v1/ingest
+    assert call["url"] == "http://pi.local:8000/api/v1/ingest/session-available"
     assert call["json"] == {"session_id": 31}
     assert call["headers"]["Authorization"] == "Bearer s3cret"

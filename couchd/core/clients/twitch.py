@@ -4,7 +4,7 @@ import aiohttp
 import logging
 
 from couchd.core.config import settings
-from couchd.core.constants import StreamOnlineConfig
+from couchd.core.constants import StreamOnlineConfig, TwitchConfig, TwitchVodConfig
 
 log = logging.getLogger(__name__)
 
@@ -289,6 +289,69 @@ class TwitchClient:
         except Exception:
             log.error("Exception in get_bits_leaderboard", exc_info=True)
             return []
+
+    async def _helix_get(self, path: str, params: dict) -> dict | None:
+        """GET a Helix endpoint with one token refresh on 401.
+
+        The older methods above each inline this dance; new callers use this so
+        the retry logic exists in exactly one place.
+        """
+        if not self.app_token:
+            await self._get_app_token()
+
+        if not self.app_token:
+            return None
+
+        url = f"{TwitchConfig.HELIX_BASE_URL}{path}"
+
+        def _headers() -> dict:
+            return {
+                "Client-ID": self.client_id,
+                "Authorization": f"Bearer {self.app_token}",
+            }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=_headers(), params=params) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    if response.status != 401:
+                        log.error(f"Twitch API Error: {response.status} on {path}")
+                        return None
+
+                log.warning("Twitch token expired. Refreshing...")
+                await self._get_app_token()
+                if not self.app_token:
+                    return None
+                async with session.get(url, headers=_headers(), params=params) as retry:
+                    if retry.status == 200:
+                        return await retry.json()
+                    log.error(f"Twitch API Error after refresh: {retry.status} on {path}")
+                    return None
+        except Exception as e:
+            log.error(f"Exception while calling Twitch {path}", exc_info=e)
+            return None
+
+    async def get_videos(
+        self,
+        user_id: str,
+        *,
+        video_type: str = TwitchVodConfig.VIDEO_TYPE_ARCHIVE,
+        first: int = TwitchVodConfig.LOOKUP_LIMIT,
+    ) -> list[dict]:
+        """Fetches a broadcaster's recent videos, newest first.
+
+        Defaults to ``archive`` videos — the automatic past-broadcast recordings
+        that back a stream VOD. Returns [] on any failure; callers treat a missing
+        VOD as "not available yet", never as an error worth blocking on.
+        """
+        payload = await self._helix_get(
+            "/videos",
+            {"user_id": user_id, "type": video_type, "first": str(first)},
+        )
+        if not payload:
+            return []
+        return payload.get("data") or []
 
     async def get_clip(self, clip_id: str) -> dict | None:
         """Fetches clip metadata from Twitch. Returns the clip object or None."""

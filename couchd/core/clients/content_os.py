@@ -17,7 +17,7 @@ from couchd.core.config import settings
 log = logging.getLogger(__name__)
 
 # content_os's inbound push endpoint (see content_os api/routers/ingest.py).
-_SESSION_AVAILABLE_PATH = "/api/ingest/session-available"
+_SESSION_AVAILABLE_PATH = "/api/v1/ingest/session-available"
 _TIMEOUT_SECONDS = 5
 
 
