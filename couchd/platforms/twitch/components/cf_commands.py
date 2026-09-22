@@ -1,14 +1,17 @@
 # couchd/platforms/twitch/components/cf_commands.py
 import logging
+import twitchio
 from twitchio.ext import commands
 from sqlalchemy import select
 
+from couchd.core.config import settings
 from couchd.core.db import get_session
 from couchd.core.models import StreamEvent, CFProblemAttempt
-from couchd.core.constants import CommandCooldowns, EventType
+from couchd.core.constants import CommandCooldowns, EventType, Platform
 from couchd.core.clients import codeforces as cf_client
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
 from couchd.core.utils import get_active_session, compute_vod_timestamp
+from couchd.core.solutions import record_cf_solution
 
 log = logging.getLogger(__name__)
 
@@ -16,6 +19,12 @@ log = logging.getLogger(__name__)
 class CFCommands(commands.Component):
     def __init__(self):
         self.cooldowns = CooldownManager()
+
+    @commands.Component.listener()
+    async def event_message(self, payload: twitchio.ChatMessage) -> None:
+        if payload.chatter.id == settings.TWITCH_BOT_ID:
+            return
+        await record_cf_solution(payload.text, Platform.TWITCH, payload.chatter.name)
 
     @commands.command(name="cf")
     async def cf_command(self, ctx: commands.Context):

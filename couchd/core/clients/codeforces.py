@@ -30,6 +30,13 @@ _ACMSGURU_RE = re.compile(
     r"codeforces\.com/problemsets/acmsguru/problem/(?P<contest>\d+)/(?P<index>\d+)"
 )
 
+# /contest/{id}/submission/{sid}, /gym/{id}/submission/{sid}, /problemset/submission/{id}/{sid}.
+# None of them carry the problem index, only the contest.
+_SUBMISSION_RE = re.compile(
+    r"codeforces\.com/(?:(?:contest|gym)/(?P<contest>\d+)/submission"
+    r"|problemset/submission/(?P<ps_contest>\d+))/\d+"
+)
+
 
 class CFProblemRef(NamedTuple):
     contest_id: int
@@ -70,6 +77,24 @@ def parse_problem_url(url: str) -> CFProblemRef | None:
         )
 
     return None
+
+
+class CFSubmissionRef(NamedTuple):
+    contest_id: int
+    url: str
+
+
+def submission_url(contest_id: int, submission_id: int) -> str:
+    return f"{CFConfig.BASE_URL}/contest/{contest_id}/submission/{submission_id}"
+
+
+def parse_submission_url(text: str) -> CFSubmissionRef | None:
+    """Find a Codeforces submission link anywhere in a chat message."""
+    match = _SUBMISSION_RE.search(text)
+    if not match:
+        return None
+    contest_id = int(match.group("contest") or match.group("ps_contest"))
+    return CFSubmissionRef(contest_id, _matched_url(text, match))
 
 
 def _matched_url(url: str, match: re.Match) -> str:

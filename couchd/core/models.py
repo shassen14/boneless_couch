@@ -11,7 +11,9 @@ from sqlalchemy import (
     Index,
     Integer,
     UniqueConstraint,
+    func,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from couchd.core.db import Base
 
@@ -171,9 +173,13 @@ class CFProblemAttempt(Base):
         "StreamEvent", back_populates="cf_problem_attempt"
     )
 
-    @property
+    @hybrid_property
     def problem_id(self) -> str:
         return f"{self.contest_id}{self.index}"
+
+    @problem_id.expression
+    def problem_id(cls):
+        return func.concat(cls.contest_id, cls.index)
 
 
 class CFProblemPost(Base):

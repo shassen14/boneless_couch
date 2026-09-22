@@ -97,6 +97,36 @@ def test_problem_url_round_trips_with_parse():
     assert codeforces.parse_problem_url(url) == (1700, "D", url)
 
 
+# ── parse_submission_url ─────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (f"{CF}/contest/1883/submission/391276739", (1883, f"{CF}/contest/1883/submission/391276739")),
+        (f"{CF}/gym/104555/submission/5", (104555, f"{CF}/gym/104555/submission/5")),
+        (f"{CF}/problemset/submission/1883/7", (1883, f"{CF}/problemset/submission/1883/7")),
+        # found mid-message, trailing text dropped
+        (f"got it! {CF}/contest/9/submission/42 ez", (9, f"{CF}/contest/9/submission/42")),
+    ],
+)
+def test_parse_submission_url_valid(text, expected):
+    assert codeforces.parse_submission_url(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [f"{CF}/contest/1883/problem/C", f"{CF}/contest/1883/submission/", "hello"],
+)
+def test_parse_submission_url_invalid(text):
+    assert codeforces.parse_submission_url(text) is None
+
+
+def test_submission_url_round_trips_with_parse():
+    url = codeforces.submission_url(1883, 391276739)
+    assert codeforces.parse_submission_url(url) == (1883, url)
+
+
 # ── resolve_problem ──────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

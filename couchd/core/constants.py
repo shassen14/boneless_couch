@@ -225,6 +225,7 @@ class CFConfig:
 
 class CFProblemsConfig:
     POLL_RATE_MINUTES: float = 1.0
+    RECENT_SUBMISSIONS: int = 10
     TITLE_MAX_LEN: int = 100
 
 

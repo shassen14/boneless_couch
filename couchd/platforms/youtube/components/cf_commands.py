@@ -4,10 +4,11 @@ from sqlalchemy import select
 
 from couchd.core.db import get_session
 from couchd.core.models import StreamEvent, CFProblemAttempt
-from couchd.core.constants import CommandCooldowns, EventType
+from couchd.core.constants import CommandCooldowns, EventType, Platform
 from couchd.core.clients import codeforces as cf_client
 from couchd.core.cooldowns import CooldownManager
 from couchd.core.utils import get_active_session, compute_vod_timestamp
+from couchd.core.solutions import record_cf_solution
 
 log = logging.getLogger(__name__)
 
@@ -15,6 +16,10 @@ log = logging.getLogger(__name__)
 class CFCommands:
     def __init__(self):
         self.cooldowns = CooldownManager()
+
+    async def on_message(self, raw: dict, text: str) -> None:
+        username = raw.get("authorDetails", {}).get("displayName", "unknown")
+        await record_cf_solution(text, Platform.YOUTUBE, username)
 
     async def cmd_cf(self, ctx) -> None:
         """!cf — show current CF problem. !cf <url> [title] — log it (mod/broadcaster only)."""

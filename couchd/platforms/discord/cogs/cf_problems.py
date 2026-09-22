@@ -6,11 +6,13 @@ from sqlalchemy import select, func
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import GuildConfig, StreamEvent, CFProblemAttempt
-from couchd.core.constants import CFConfig, CFProblemsConfig
+from couchd.core.models import GuildConfig, StreamEvent, CFProblemAttempt, CFProblemPost
+from couchd.core.constants import CFProblemsConfig, Platform
 from couchd.core.clients import codeforces as cf_client
 from couchd.core.utils import get_active_session, compute_vod_timestamp
+from couchd.core.solutions import current_cf_attempt, upsert_solution
 from couchd.platforms.discord.components.cf_problems_forum import sync_cf_problem
+from couchd.platforms.discord.components.problems_forum import flush_pending_solutions
 
 log = logging.getLogger(__name__)
 
@@ -82,51 +84,45 @@ class CFProblemsWatcherCog(commands.Cog):
                 await sync_cf_problem(forum, pid, self.bot)
             self.last_processed_attempt_id = new_attempts[-1].id
 
+        await flush_pending_solutions(forum, self.bot, CFProblemPost.problem_id)
+
     async def _poll_streamer_submissions(self):
         active_session = await get_active_session()
         if not active_session:
             return
 
-        async with get_session() as db:
-            current = (
-                await db.execute(
-                    select(CFProblemAttempt)
-                    .join(StreamEvent)
-                    .where(StreamEvent.session_id == active_session.id)
-                    .order_by(StreamEvent.timestamp.desc())
-                    .limit(1)
-                )
-            ).scalar_one_or_none()
-
+        current = await current_cf_attempt(active_session)
         if not current:
             return
 
         submissions = await cf_client.fetch_recent_ac_submissions(
-            settings.CODEFORCES_HANDLE, count=10
+            settings.CODEFORCES_HANDLE, count=CFProblemsConfig.RECENT_SUBMISSIONS
         )
-        matching = [
-            s for s in submissions
-            if s["contest_id"] == current.contest_id and s["index"] == current.index
-        ]
+        # user.status lists newest first, so this is the latest AC for the problem.
+        sub = next(
+            (
+                s for s in submissions
+                if s["contest_id"] == current.contest_id and s["index"] == current.index
+            ),
+            None,
+        )
+        if not sub:
+            return
 
-        for sub in matching:
-            sub_url = f"{CFConfig.BASE_URL}/contest/{sub['contest_id']}/submission/{sub['submission_id']}"
-            vod_ts = compute_vod_timestamp(active_session.start_time)
+        if not current.tags and sub["tags"]:
             async with get_session() as db:
-                existing = (
-                    await db.execute(
-                        select(CFProblemAttempt).where(
-                            CFProblemAttempt.id == current.id
-                        )
-                    )
-                ).scalar_one_or_none()
-                if existing and not existing.tags:
-                    existing.tags = ", ".join(sub.get("tags", []))
-                    await db.commit()
+                attempt = await db.get(CFProblemAttempt, current.id)
+                attempt.tags = ", ".join(sub["tags"])
+                await db.commit()
+
+        url = cf_client.submission_url(sub["contest_id"], sub["submission_id"])
+        vod_ts = compute_vod_timestamp(active_session.start_time)
+        if await upsert_solution(
+            current.problem_id, Platform.TWITCH.value, settings.TWITCH_CHANNEL, url, vod_ts
+        ):
             log.info(
-                "Auto-detected CF AC for %s%s (submission %s)",
-                current.contest_id,
-                current.index,
+                "Auto-logged streamer CF solution for %s (submission %s)",
+                current.problem_id,
                 sub["submission_id"],
             )
 

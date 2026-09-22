@@ -6,6 +6,7 @@ from sqlalchemy import select
 from couchd.core.db import get_session
 from couchd.core.models import CFProblemAttempt, CFProblemPost, StreamEvent
 from couchd.core.constants import BrandColors, CFProblemsConfig
+from couchd.platforms.discord.components.problems_forum import sync_solution_comments
 
 log = logging.getLogger(__name__)
 
@@ -52,15 +53,18 @@ async def sync_cf_problem(forum: discord.ForumChannel, problem_id: str, bot) -> 
         ).scalar_one_or_none()
 
     if post:
-        await _update_cf_thread(forum, problem_id, post, bot)
+        thread = await _update_cf_thread(forum, problem_id, post, bot)
     else:
-        await _create_cf_thread(forum, problem_id)
+        thread = await _create_cf_thread(forum, problem_id)
+
+    if thread:
+        await sync_solution_comments(thread, problem_id)
 
 
-async def _create_cf_thread(forum: discord.ForumChannel, problem_id: str) -> None:
+async def _create_cf_thread(forum: discord.ForumChannel, problem_id: str):
     thread_name, embed, _ = await build_cf_embed(problem_id)
     if not embed:
-        return
+        return None
 
     try:
         thread = await forum.create_thread(
@@ -72,16 +76,18 @@ async def _create_cf_thread(forum: discord.ForumChannel, problem_id: str) -> Non
             db.add(CFProblemPost(problem_id=problem_id, forum_thread_id=thread.id))
             await db.commit()
         log.info("Created CF forum thread for %s (thread_id=%d)", problem_id, thread.id)
+        return thread
     except Exception:
         log.error("Failed to create CF forum thread for %s", problem_id, exc_info=True)
+        return None
 
 
 async def _update_cf_thread(
     forum: discord.ForumChannel, problem_id: str, post: CFProblemPost, bot
-) -> None:
+):
     thread_name, embed, _ = await build_cf_embed(problem_id)
     if not embed:
-        return
+        return None
 
     try:
         thread = forum.get_thread(post.forum_thread_id)
@@ -95,5 +101,7 @@ async def _update_cf_thread(
         await starter_msg.edit(embed=embed)
         await thread.edit(name=thread_name)
         log.info("Updated CF forum thread for %s", problem_id)
+        return thread
     except Exception:
         log.error("Failed to update CF forum thread for %s", problem_id, exc_info=True)
+        return None

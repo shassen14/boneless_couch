@@ -167,33 +167,24 @@ async def sync_solution_comments(thread: discord.Thread, slug: str):
             await db.commit()
 
 
-async def flush_pending_solutions(forum: discord.ForumChannel, bot):
+async def flush_pending_solutions(forum: discord.ForumChannel, bot, post_key=ProblemPost.platform_id):
+    """Post solutions not yet in Discord. post_key is the thread table's problem column."""
+    post_model = post_key.class_
     async with get_session() as db:
-        slugs = (
-            (
-                await db.execute(
-                    select(SolutionPost.problem_slug)
-                    .distinct()
-                    .where(SolutionPost.discord_message_id.is_(None))
-                )
+        pending = (
+            await db.execute(
+                select(SolutionPost.problem_slug, post_model.forum_thread_id)
+                .distinct()
+                .join(post_model, post_key == SolutionPost.problem_slug)
+                .where(SolutionPost.discord_message_id.is_(None))
             )
-            .scalars()
-            .all()
-        )
+        ).all()
 
-    for slug in slugs:
-        async with get_session() as db:
-            post = (
-                await db.execute(
-                    select(ProblemPost).where(ProblemPost.platform_id == slug)
-                )
-            ).scalar_one_or_none()
-        if not post:
-            continue
-        thread = forum.get_thread(post.forum_thread_id)
+    for slug, thread_id in pending:
+        thread = forum.get_thread(thread_id)
         if not thread:
             try:
-                thread = await bot.fetch_channel(post.forum_thread_id)
+                thread = await bot.fetch_channel(thread_id)
             except Exception:
                 log.warning("Could not fetch thread for slug %s", slug)
                 continue
