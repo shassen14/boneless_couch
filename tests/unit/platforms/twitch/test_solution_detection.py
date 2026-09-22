@@ -5,8 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from couchd.core.models import ProblemAttempt, ProblemPost, SolutionPost, StreamEvent, StreamSession
+from couchd.core.models import ProblemAttempt, ProblemPost, StreamSession
 from couchd.platforms.twitch.components.lc_commands import LCCommands
+
+_MOD = "couchd.platforms.twitch.components.lc_commands"
 
 _START_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -62,94 +64,75 @@ def _mock_db(*scalar_returns):
 
 async def test_slug_url_with_forum_post_logs_solution(bot_commands):
     """Any problem with a forum thread can receive a solution, even off-stream."""
-    post = _problem_post("two-sum")
-    db = _mock_db(post, None)  # post found, no existing solution
+    db = _mock_db(_problem_post("two-sum"))
+    upsert = AsyncMock(return_value=True)
+    url = "https://leetcode.com/problems/two-sum/submissions/123456/"
 
     with (
-        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=None)),
-        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
+        patch(f"{_MOD}.get_active_session", AsyncMock(return_value=None)),
+        patch(f"{_MOD}.get_session", _make_get_session(db)),
+        patch(f"{_MOD}.upsert_solution", upsert),
     ):
-        await bot_commands._check_solution_url(
-            _payload("https://leetcode.com/problems/two-sum/submissions/123456/")
-        )
+        await bot_commands._check_solution_url(_payload(url))
 
-    db.add.assert_called_once()
-    added = db.add.call_args[0][0]
-    assert added.problem_slug == "two-sum"
-    assert "submissions/123456" in added.url
-    assert added.vod_timestamp is None  # no active session
+    upsert.assert_awaited_once_with("two-sum", "twitch", "viewer1", url, None)  # no active session
 
 
 async def test_slug_url_with_active_session_captures_vod_timestamp(bot_commands):
     """When streaming, vod_timestamp is recorded for video editing reference."""
-    post = _problem_post("two-sum")
-    db = _mock_db(post, None)
+    db = _mock_db(_problem_post("two-sum"))
+    upsert = AsyncMock(return_value=True)
 
     with (
-        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=_stream_session())),
-        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
-        patch("couchd.platforms.twitch.components.lc_commands.compute_vod_timestamp", return_value="00h30m00s"),
+        patch(f"{_MOD}.get_active_session", AsyncMock(return_value=_stream_session())),
+        patch(f"{_MOD}.get_session", _make_get_session(db)),
+        patch(f"{_MOD}.compute_vod_timestamp", return_value="00h30m00s"),
+        patch(f"{_MOD}.upsert_solution", upsert),
     ):
         await bot_commands._check_solution_url(
             _payload("https://leetcode.com/problems/two-sum/submissions/123456/")
         )
 
-    added = db.add.call_args[0][0]
-    assert added.vod_timestamp == "00h30m00s"
+    assert upsert.await_args.args[4] == "00h30m00s"
 
 
 async def test_slug_url_no_forum_post_skips(bot_commands):
     """Problem not in the forum — solution is ignored."""
     db = _mock_db(None)
+    upsert = AsyncMock()
 
     with (
-        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=None)),
-        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
+        patch(f"{_MOD}.get_active_session", AsyncMock(return_value=None)),
+        patch(f"{_MOD}.get_session", _make_get_session(db)),
+        patch(f"{_MOD}.upsert_solution", upsert),
     ):
         await bot_commands._check_solution_url(
             _payload("https://leetcode.com/problems/two-sum/submissions/123456/")
         )
 
-    db.add.assert_not_called()
-
-
-async def test_slug_url_updates_existing_solution(bot_commands):
-    """Re-submission updates the URL rather than creating a duplicate."""
-    post = _problem_post("two-sum")
-    existing = MagicMock(spec=SolutionPost)
-    db = _mock_db(post, existing)
-
-    with (
-        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=None)),
-        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
-    ):
-        await bot_commands._check_solution_url(
-            _payload("https://leetcode.com/problems/two-sum/submissions/999/")
-        )
-
-    db.add.assert_not_called()
-    assert "submissions/999" in existing.url
+    upsert.assert_not_called()
 
 
 # ── bare URL tests ────────────────────────────────────────────────────────────
 
 async def test_bare_url_with_active_session_logs_solution(bot_commands):
     """Bare submission URL is accepted when the slug can be resolved from active problem."""
-    session = _stream_session()
     attempt = MagicMock(spec=ProblemAttempt)
     attempt.slug = "two-sum"
-    db = _mock_db(attempt, None)
+    db = _mock_db(attempt)
+    upsert = AsyncMock(return_value=True)
 
     with (
-        patch("couchd.platforms.twitch.components.lc_commands.get_active_session", AsyncMock(return_value=session)),
-        patch("couchd.platforms.twitch.components.lc_commands.get_session", _make_get_session(db)),
-        patch("couchd.platforms.twitch.components.lc_commands.compute_vod_timestamp", return_value="00h30m00s"),
+        patch(f"{_MOD}.get_active_session", AsyncMock(return_value=_stream_session())),
+        patch(f"{_MOD}.get_session", _make_get_session(db)),
+        patch(f"{_MOD}.compute_vod_timestamp", return_value="00h30m00s"),
+        patch(f"{_MOD}.upsert_solution", upsert),
     ):
         await bot_commands._check_solution_url(
             _payload("https://leetcode.com/submissions/detail/999/")
         )
 
-    db.add.assert_called_once()
+    assert upsert.await_args.args[0] == "two-sum"
 
 
 async def test_bare_url_no_active_session_skips(bot_commands):

@@ -6,10 +6,11 @@ from sqlalchemy import select, func
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import GuildConfig, StreamEvent, ProblemAttempt, SolutionPost
-from couchd.core.constants import LeetCodeConfig, ProblemsConfig
+from couchd.core.models import GuildConfig, StreamEvent, ProblemAttempt
+from couchd.core.constants import LeetCodeConfig, ProblemsConfig, Platform
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.utils import get_active_session, compute_vod_timestamp
+from couchd.core.solutions import upsert_solution
 from couchd.platforms.discord.components.problems_forum import (
     sync_problem,
     flush_pending_solutions,
@@ -115,35 +116,16 @@ class ProblemsWatcherCog(commands.Cog):
         submissions = await self.lc_client.fetch_recent_ac_submissions(
             settings.LEETCODE_USERNAME
         )
-        matching = [s for s in submissions if s["titleSlug"] == attempt.slug]
+        # Newest first, so this is the latest AC for the problem.
+        sub = next((s for s in submissions if s["titleSlug"] == attempt.slug), None)
+        if not sub:
+            return
 
-        for sub in matching:
-            url = LeetCodeConfig.SUBMISSION_URL.format(sub["id"])
-            vod_ts = compute_vod_timestamp(active_session.start_time)
-            async with get_session() as db:
-                sol = (
-                    await db.execute(
-                        select(SolutionPost).where(
-                            SolutionPost.problem_slug == attempt.slug,
-                            SolutionPost.platform == "twitch",
-                            SolutionPost.username == settings.TWITCH_CHANNEL,
-                        )
-                    )
-                ).scalar_one_or_none()
-                if sol:
-                    sol.url = url
-                    sol.vod_timestamp = vod_ts
-                else:
-                    db.add(
-                        SolutionPost(
-                            problem_slug=attempt.slug,
-                            platform="twitch",
-                            username=settings.TWITCH_CHANNEL,
-                            url=url,
-                            vod_timestamp=vod_ts,
-                        )
-                    )
-                await db.commit()
+        url = LeetCodeConfig.SUBMISSION_URL.format(sub["id"])
+        vod_ts = compute_vod_timestamp(active_session.start_time)
+        if await upsert_solution(
+            attempt.slug, Platform.TWITCH.value, settings.TWITCH_CHANNEL, url, vod_ts
+        ):
             log.info(
                 "Auto-logged streamer solution for %s (submission %s)",
                 attempt.slug,

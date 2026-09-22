@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from discord.ext import tasks
 
-from couchd.core.models import ProblemAttempt, SolutionPost, StreamSession
+from couchd.core.constants import LeetCodeConfig
+from couchd.core.models import ProblemAttempt, StreamSession
 from couchd.platforms.discord.cogs.problems import ProblemsWatcherCog
 from couchd.platforms.discord.components.problems_forum import build_problem_embed, resolve_tags
 
@@ -167,7 +168,7 @@ async def test_poll_no_attempt_skips(cog):
     db.add.assert_not_called()
 
 
-async def test_poll_matching_submission_inserts_solution(cog):
+async def test_poll_matching_submission_upserts_latest(cog):
     session = MagicMock(spec=StreamSession)
     session.id = 1
     session.start_time = _START_TIME
@@ -175,46 +176,25 @@ async def test_poll_matching_submission_inserts_solution(cog):
     attempt = MagicMock(spec=ProblemAttempt)
     attempt.slug = "two-sum"
 
-    gs, db = _make_poll_db(attempt, None)  # attempt found, no existing solution
-    cog.lc_client.fetch_recent_ac_submissions = AsyncMock(
-        return_value=[{"id": "555", "titleSlug": "two-sum", "timestamp": "1700000000"}]
-    )
+    gs, _ = _make_poll_db(attempt)
+    upsert = AsyncMock(return_value=True)
+    # Newest first: 555 is the latest AC, 444 an older one.
+    cog.lc_client.fetch_recent_ac_submissions = AsyncMock(return_value=[
+        {"id": "555", "titleSlug": "two-sum", "timestamp": "1700000000"},
+        {"id": "444", "titleSlug": "two-sum", "timestamp": "1690000000"},
+    ])
 
     with (
         patch("couchd.platforms.discord.cogs.problems.get_active_session", AsyncMock(return_value=session)),
         patch("couchd.platforms.discord.cogs.problems.get_session", gs),
         patch("couchd.platforms.discord.cogs.problems.compute_vod_timestamp", return_value="01h00m00s"),
+        patch("couchd.platforms.discord.cogs.problems.upsert_solution", upsert),
     ):
         await cog._poll_streamer_solutions()
 
-    db.add.assert_called_once()
-    added = db.add.call_args[0][0]
-    assert isinstance(added, SolutionPost)
-    assert added.problem_slug == "two-sum"
-    assert "555" in added.url
-
-
-async def test_poll_duplicate_submission_skips_insert(cog):
-    session = MagicMock(spec=StreamSession)
-    session.id = 1
-    session.start_time = _START_TIME
-
-    attempt = MagicMock(spec=ProblemAttempt)
-    attempt.slug = "two-sum"
-    existing = MagicMock(spec=SolutionPost)
-
-    gs, db = _make_poll_db(attempt, existing)  # attempt found, existing solution
-    cog.lc_client.fetch_recent_ac_submissions = AsyncMock(
-        return_value=[{"id": "555", "titleSlug": "two-sum", "timestamp": "1700000000"}]
+    upsert.assert_awaited_once_with(
+        "two-sum", "twitch", "teststreamer", LeetCodeConfig.SUBMISSION_URL.format("555"), "01h00m00s"
     )
-
-    with (
-        patch("couchd.platforms.discord.cogs.problems.get_active_session", AsyncMock(return_value=session)),
-        patch("couchd.platforms.discord.cogs.problems.get_session", gs),
-    ):
-        await cog._poll_streamer_solutions()
-
-    db.add.assert_not_called()
 
 
 # ── watermark seeding ────────────────────────────────────────────────────────

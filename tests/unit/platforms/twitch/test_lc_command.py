@@ -191,6 +191,7 @@ async def _check(cog, text, session, get_session_fn, name="solver"):
     payload = _payload(text, name=name)
     with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=session)), \
          patch(f"{_MOD}.get_session", get_session_fn), \
+         patch("couchd.core.solutions.get_session", get_session_fn), \
          patch(f"{_MOD}.compute_vod_timestamp", return_value="00h05m00s"):
         await cog._check_solution_url(payload)
 

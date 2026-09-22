@@ -140,7 +140,9 @@ async def sync_solution_comments(thread: discord.Thread, slug: str):
         rows = (
             (
                 await db.execute(
-                    select(SolutionPost).where(SolutionPost.problem_slug == slug)
+                    select(SolutionPost).where(
+                        SolutionPost.problem_slug == slug, SolutionPost.is_synced.is_(False)
+                    )
                 )
             )
             .scalars()
@@ -152,18 +154,21 @@ async def sync_solution_comments(thread: discord.Thread, slug: str):
             f"**{sol.username}** solved this (via {sol.platform})!\n"
             f"[View Submission]({sol.url})"
         )
+        msg = None
         if sol.discord_message_id:
             try:
                 msg = await thread.fetch_message(sol.discord_message_id)
                 await msg.edit(content=content)
-                continue
             except discord.NotFound:
-                pass  # message deleted — fall through to post new
+                msg = None  # message deleted — post a new one
 
-        msg = await thread.send(content)
+        if not msg:
+            msg = await thread.send(content)
         async with get_session() as db:
             row = await db.get(SolutionPost, sol.id)
             row.discord_message_id = msg.id
+            # A resubmission that landed mid-sync stays pending for the next pass.
+            row.is_synced = row.url == sol.url
             await db.commit()
 
 
@@ -176,7 +181,7 @@ async def flush_pending_solutions(forum: discord.ForumChannel, bot, post_key=Pro
                 select(SolutionPost.problem_slug, post_model.forum_thread_id)
                 .distinct()
                 .join(post_model, post_key == SolutionPost.problem_slug)
-                .where(SolutionPost.discord_message_id.is_(None))
+                .where(SolutionPost.is_synced.is_(False))
             )
         ).all()
 

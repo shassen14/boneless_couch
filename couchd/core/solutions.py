@@ -30,6 +30,7 @@ async def upsert_solution(
         if sol:
             sol.url = url
             sol.vod_timestamp = vod_ts
+            sol.is_synced = False
         else:
             db.add(
                 SolutionPost(

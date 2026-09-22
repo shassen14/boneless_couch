@@ -126,7 +126,8 @@ async def test_solution_slug_form_upserts(cog, get_session_fn, db_session, strea
     await db_session.commit()
     text = "https://leetcode.com/problems/two-sum/submissions/123456/"
     with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)), \
-         patch(f"{_MOD}.get_session", get_session_fn):
+         patch(f"{_MOD}.get_session", get_session_fn), \
+         patch("couchd.core.solutions.get_session", get_session_fn):
         await cog._check_solution_url(_raw("alice"), text)
     rows = (await db_session.execute(select(SolutionPost))).scalars().all()
     assert len(rows) == 1
@@ -147,7 +148,8 @@ async def test_solution_slug_form_no_problem_post_skips(cog, get_session_fn, db_
 async def test_solution_bare_form_uses_current_attempt(cog, get_session_fn, db_session, lc_event, stream_session):
     text = "https://leetcode.com/submissions/detail/987654/"
     with patch(f"{_MOD}.get_active_session", AsyncMock(return_value=stream_session)), \
-         patch(f"{_MOD}.get_session", get_session_fn):
+         patch(f"{_MOD}.get_session", get_session_fn), \
+         patch("couchd.core.solutions.get_session", get_session_fn):
         await cog._check_solution_url(_raw("bob"), text)
     rows = (await db_session.execute(select(SolutionPost))).scalars().all()
     assert len(rows) == 1

@@ -15,7 +15,7 @@ from couchd.core.models import (
     SolutionPost,
     StreamEvent,
 )
-from couchd.core.solutions import record_cf_solution
+from couchd.core.solutions import record_cf_solution, upsert_solution
 from couchd.platforms.discord.components.cf_problems_forum import (
     build_cf_embed,
     sync_cf_problem,
@@ -129,3 +129,29 @@ async def test_record_cf_solution_ignores_other_contest(patched_db, cf_attempt, 
 async def test_record_cf_solution_needs_active_session(patched_db, db_session):
     await record_cf_solution(_SUBMISSION, Platform.TWITCH, "viewer1")
     assert await _solutions(db_session) == []
+
+
+async def test_resubmission_edits_existing_reply(patched_db, db_session):
+    db_session.add(CFProblemPost(problem_id="1883C", forum_thread_id=222))
+    db_session.add(SolutionPost(
+        problem_slug="1883C", platform="twitch", username="v", url=_SUBMISSION,
+        discord_message_id=9, is_synced=True,
+    ))
+    await db_session.commit()
+
+    newer = "https://codeforces.com/contest/1883/submission/400000000"
+    assert await upsert_solution("1883C", "twitch", "v", newer, None)
+    assert not await upsert_solution("1883C", "twitch", "v", newer, None)  # unchanged
+
+    msg = MagicMock(id=9)
+    msg.edit = AsyncMock()
+    thread = MagicMock()
+    thread.fetch_message = AsyncMock(return_value=msg)
+    thread.send = AsyncMock()
+    forum = MagicMock()
+    forum.get_thread = MagicMock(return_value=thread)
+
+    await flush_pending_solutions(forum, MagicMock(), CFProblemPost.problem_id)
+
+    assert newer in msg.edit.call_args.kwargs["content"]
+    thread.send.assert_not_called()

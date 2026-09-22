@@ -11,6 +11,7 @@ from sqlalchemy import (
     Index,
     Integer,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -212,6 +213,10 @@ class SolutionPost(Base):
     url: Mapped[str] = mapped_column(String, nullable=False)
     vod_timestamp: Mapped[str] = mapped_column(String, nullable=True)
     discord_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    # False until the Discord reply shows the current url.
+    is_synced: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
 
     __table_args__ = (UniqueConstraint("problem_slug", "platform", "username"),)
 

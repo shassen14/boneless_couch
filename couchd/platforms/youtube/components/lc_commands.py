@@ -4,13 +4,14 @@ import re
 from sqlalchemy import select
 
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent, ProblemAttempt, SolutionPost, ProblemPost
+from couchd.core.models import StreamEvent, ProblemAttempt, ProblemPost
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.youtube_chat import YouTubeChatClient
 from couchd.core.constants import CommandCooldowns, Platform
 from couchd.core.cooldowns import CooldownManager
 from couchd.core.moderation import ModerationEngine
 from couchd.core.utils import get_active_session, compute_vod_timestamp
+from couchd.core.solutions import upsert_solution
 
 log = logging.getLogger(__name__)
 
@@ -77,30 +78,11 @@ class LCCommands:
                     return
                 slug = attempt.slug
 
-            vod_ts = compute_vod_timestamp(active_session.start_time) if active_session else None
-            sol = (
-                await db.execute(
-                    select(SolutionPost).where(
-                        SolutionPost.problem_slug == slug,
-                        SolutionPost.platform == Platform.YOUTUBE.value,
-                        SolutionPost.username == username,
-                    )
-                )
-            ).scalar_one_or_none()
-            if sol:
-                sol.url = url
-                sol.vod_timestamp = vod_ts
-            else:
-                db.add(SolutionPost(
-                    problem_slug=slug,
-                    platform=Platform.YOUTUBE.value,
-                    username=username,
-                    url=url,
-                    vod_timestamp=vod_ts,
-                ))
-            await db.commit()
-
-        log.info("Logged YouTube solution from %s for %s", username, slug)
+        vod_ts = (
+            compute_vod_timestamp(active_session.start_time) if active_session else None
+        )
+        if await upsert_solution(slug, Platform.YOUTUBE.value, username, url, vod_ts):
+            log.info("Logged YouTube solution from %s for %s", username, slug)
 
     async def cmd_lc(self, ctx) -> None:
         """

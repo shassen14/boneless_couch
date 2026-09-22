@@ -7,13 +7,14 @@ from sqlalchemy import select
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent, ProblemAttempt, SolutionPost, ProblemPost
+from couchd.core.models import StreamEvent, ProblemAttempt, ProblemPost
 from couchd.core.clients.leetcode import LeetCodeClient
-from couchd.core.constants import CommandCooldowns, HoldSource
+from couchd.core.constants import CommandCooldowns, HoldSource, Platform
 from couchd.core.moderation import ModerationEngine
 from couchd.platforms.twitch.components.metrics_tracker import ChatVelocityTracker
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
 from couchd.core.utils import get_active_session, compute_vod_timestamp
+from couchd.core.solutions import upsert_solution
 from couchd.core.clients import veil
 
 log = logging.getLogger(__name__)
@@ -115,37 +116,11 @@ class LCCommands(commands.Component):
                     return
                 slug = attempt.slug
 
-            username = payload.chatter.name
-            vod_ts = (
-                compute_vod_timestamp(active_session.start_time)
-                if active_session
-                else None
-            )
-            sol = (
-                await db.execute(
-                    select(SolutionPost).where(
-                        SolutionPost.problem_slug == slug,
-                        SolutionPost.platform == "twitch",
-                        SolutionPost.username == username,
-                    )
-                )
-            ).scalar_one_or_none()
-            if sol:
-                sol.url = url
-                sol.vod_timestamp = vod_ts
-            else:
-                db.add(
-                    SolutionPost(
-                        problem_slug=slug,
-                        platform="twitch",
-                        username=username,
-                        url=url,
-                        vod_timestamp=vod_ts,
-                    )
-                )
-            await db.commit()
-
-        log.info("Logged solution from %s for %s", payload.chatter.name, slug)
+        vod_ts = (
+            compute_vod_timestamp(active_session.start_time) if active_session else None
+        )
+        if await upsert_solution(slug, Platform.TWITCH.value, payload.chatter.name, url, vod_ts):
+            log.info("Logged solution from %s for %s", payload.chatter.name, slug)
 
     @commands.command(name="lc")
     async def leetcode_command(self, ctx: commands.Context):

@@ -85,6 +85,7 @@ async def test_poll_inserts_solution(
             AsyncMock(return_value=stream_session),
         ),
         patch(_COG_PATCH, get_session_fn),
+        patch("couchd.core.solutions.get_session", get_session_fn),
         patch(
             "couchd.platforms.discord.cogs.problems.compute_vod_timestamp",
             return_value="00h55m00s",
@@ -128,6 +129,7 @@ async def test_poll_does_not_insert_duplicate(
             AsyncMock(return_value=stream_session),
         ),
         patch(_COG_PATCH, get_session_fn),
+        patch("couchd.core.solutions.get_session", get_session_fn),
         patch(
             "couchd.platforms.discord.cogs.problems.compute_vod_timestamp",
             return_value="01h00m00s",
@@ -142,6 +144,8 @@ async def test_poll_does_not_insert_duplicate(
         solutions = (await verify_session.execute(select(SolutionPost))).scalars().all()
 
     assert len(solutions) == 1  # still just the original, no duplicate
+    # Same submission on a later poll leaves the original VOD timestamp alone.
+    assert solutions[0].vod_timestamp == "00h50m00s"
 
 
 # ── resolve_tags ──────────────────────────────────────────────────────────────
@@ -215,7 +219,7 @@ async def test_sync_solution_edits_existing_message(get_session_fn, db_session):
     db_session.add(sol)
     await db_session.commit()
 
-    existing_msg = MagicMock()
+    existing_msg = MagicMock(id=555)
     existing_msg.edit = AsyncMock()
     thread = MagicMock()
     thread.fetch_message = AsyncMock(return_value=existing_msg)
@@ -227,6 +231,30 @@ async def test_sync_solution_edits_existing_message(get_session_fn, db_session):
     thread.fetch_message.assert_awaited_once_with(555)
     existing_msg.edit.assert_awaited_once()
     thread.send.assert_not_called()  # edited, not re-posted
+    await db_session.refresh(sol)
+    assert sol.is_synced
+
+
+async def test_sync_solution_skips_already_synced(get_session_fn, db_session):
+    db_session.add(SolutionPost(
+        problem_slug="two-sum",
+        platform="twitch",
+        username="viewerB",
+        url="https://leetcode.com/submissions/detail/2/",
+        discord_message_id=555,
+        is_synced=True,
+    ))
+    await db_session.commit()
+
+    thread = MagicMock()
+    thread.fetch_message = AsyncMock()
+    thread.send = AsyncMock()
+
+    with patch(_FORUM_PATCH, get_session_fn):
+        await sync_solution_comments(thread, "two-sum")
+
+    thread.fetch_message.assert_not_called()
+    thread.send.assert_not_called()
 
 
 async def test_sync_solution_reposts_when_message_deleted(get_session_fn, db_session):
