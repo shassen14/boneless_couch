@@ -13,7 +13,7 @@ Commands are prefixed with `!` and work in YouTube live chat during an active st
 | `!edit`        | Show the current video editing subject                   |
 | `!topic`       | Show the current just chatting topic                     |
 | `!task`        | Show the current active micro-task                       |
-| `!status`      | Show current activity and active task in one reply       |
+| `!status` / `!what` / `!wyd` / `!doing` | Show current activity and active task in one reply       |
 | `!idea <text>` | Submit a community idea to be voted on in Discord        |
 | `!newvideo`    | Show the latest YouTube upload                           |
 | `!socials`     | Show all social links (Twitch, YouTube, GitHub, Discord) |

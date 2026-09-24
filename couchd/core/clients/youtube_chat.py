@@ -75,6 +75,11 @@ class YouTubeChatClient:
             loop = asyncio.get_event_loop()
             self._creds = await loop.run_in_executor(None, self._load_or_refresh_creds)
 
+    async def access_token(self) -> str:
+        """Fresh OAuth access token — used as gRPC call metadata by YouTubeChatStream."""
+        await self._ensure_creds()
+        return self._creds.token
+
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self._creds.token}"}
 

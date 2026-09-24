@@ -25,6 +25,7 @@ class InteractionType(str, Enum):
 
 
 TASK_DONE = "done"
+STATUS_ALIASES = ("what", "wyd", "doing")
 
 MACRO_EVENT_TYPES = frozenset({
     EventType.PROBLEM_ATTEMPT,
@@ -34,6 +35,15 @@ MACRO_EVENT_TYPES = frozenset({
     EventType.EDIT,
     EventType.TOPIC,
 })
+
+
+MACRO_LABELS = {
+    EventType.GAME: "Playing",
+    EventType.EDIT: "Editing",
+    EventType.TOPIC: "Chatting about",
+}
+
+MACRO_FALLBACK = "Just streaming"
 
 
 class Platform(str, Enum):
@@ -162,6 +172,10 @@ class YouTubeChatConfig:
         "https://www.googleapis.com/auth/youtube",
     ]
     DEFAULT_POLL_MS = 5000
+    GRPC_TARGET = "dns:///youtube.googleapis.com:443"
+    STREAM_PARTS = ("snippet", "authorDetails")
+    STREAM_RETRY_SECONDS = 5
+    IDLE_SLEEP_SECONDS = 30
     BROADCAST_STATUS = "active"
     MAX_RESULTS = 200
 

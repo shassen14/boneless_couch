@@ -5,8 +5,15 @@ from sqlalchemy import func, select
 
 from couchd.core.config import settings
 from couchd.core.db import get_session
-from couchd.core.models import StreamSession, ViewerInteraction
-from couchd.core.constants import Platform, InteractionType
+from couchd.core.models import (
+    StreamSession,
+    StreamEvent,
+    ViewerInteraction,
+    ProblemAttempt,
+    CFProblemAttempt,
+    ProjectLog,
+)
+from couchd.core.constants import Platform, InteractionType, EventType, MACRO_LABELS
 
 
 def compute_vod_timestamp(start_time: datetime) -> str:
@@ -30,6 +37,24 @@ async def get_active_session(platform: Platform = Platform.TWITCH) -> StreamSess
             .order_by(StreamSession.start_time.desc())
         )
         return result.scalars().first()
+
+
+async def format_macro_event(db, event: StreamEvent) -> str:
+    """Human-readable label for a macro StreamEvent, shared by !status on every platform."""
+    detail_specs = {
+        EventType.PROBLEM_ATTEMPT: (ProblemAttempt, "Solving [LeetCode: {}]", "Solving [LeetCode problem]"),
+        EventType.CF_PROBLEM: (CFProblemAttempt, "Solving [CF: {}]", "Solving [CF problem]"),
+        EventType.PROJECT: (ProjectLog, "Working on [{}]", "Working on [project]"),
+    }
+    spec = detail_specs.get(event.event_type)
+    if spec:
+        model, template, fallback = spec
+        detail = (
+            await db.execute(select(model).where(model.stream_event_id == event.id))
+        ).scalar_one_or_none()
+        return template.format(detail.title) if detail else fallback
+    prefix = MACRO_LABELS.get(event.event_type, event.event_type.capitalize())
+    return f"{prefix} [{event.notes}]"
 
 
 async def get_overlay_stats() -> dict:

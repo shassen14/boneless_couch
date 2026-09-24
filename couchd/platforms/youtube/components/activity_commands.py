@@ -3,10 +3,18 @@ import logging
 from sqlalchemy import select
 
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog
-from couchd.core.constants import CommandCooldowns, MACRO_EVENT_TYPES, EventType, TASK_DONE, Platform
+from couchd.core.models import StreamEvent
+from couchd.core.constants import (
+    CommandCooldowns,
+    MACRO_EVENT_TYPES,
+    EventType,
+    TASK_DONE,
+    Platform,
+    STATUS_ALIASES,
+    MACRO_FALLBACK,
+)
 from couchd.core.cooldowns import CooldownManager
-from couchd.core.utils import get_active_session
+from couchd.core.utils import get_active_session, format_macro_event
 
 log = logging.getLogger(__name__)
 
@@ -14,6 +22,8 @@ log = logging.getLogger(__name__)
 class ActivityCommands:
     def __init__(self):
         self.cooldowns = CooldownManager()
+        for alias in STATUS_ALIASES:
+            setattr(self, f"cmd_{alias}", self.cmd_status)
 
     async def _simple_event_command(self, ctx, event_type: str, label: str) -> None:
         args = ctx.content.split(maxsplit=1)
@@ -62,29 +72,6 @@ class ActivityCommands:
         except Exception:
             log.error("DB error logging %s", event_type, exc_info=True)
             await ctx.reply("Failed to save to DB.")
-
-    async def _format_macro(self, db, event: StreamEvent) -> str:
-        if event.event_type == EventType.PROBLEM_ATTEMPT:
-            attempt = (
-                await db.execute(
-                    select(ProblemAttempt).where(ProblemAttempt.stream_event_id == event.id)
-                )
-            ).scalar_one_or_none()
-            return f"Solving [LeetCode: {attempt.title}]" if attempt else "Solving [LeetCode problem]"
-        if event.event_type == EventType.PROJECT:
-            proj = (
-                await db.execute(
-                    select(ProjectLog).where(ProjectLog.stream_event_id == event.id)
-                )
-            ).scalar_one_or_none()
-            return f"Working on [{proj.title}]" if proj else "Working on [project]"
-        labels = {
-            EventType.GAME: "Playing",
-            EventType.EDIT: "Editing",
-            EventType.TOPIC: "Chatting about",
-        }
-        prefix = labels.get(event.event_type, event.event_type.capitalize())
-        return f"{prefix} [{event.notes}]"
 
     async def cmd_game(self, ctx) -> None:
         await self._simple_event_command(ctx, EventType.GAME, "Now playing")
@@ -144,7 +131,7 @@ class ActivityCommands:
             await ctx.reply("Failed to save to DB.")
 
     async def cmd_status(self, ctx) -> None:
-        """!status — show current macro subject and active task."""
+        """!status (!what, !wyd, !doing) — show current macro subject and active task."""
         if self.cooldowns.check("status", ctx.author.id, CommandCooldowns.SIMPLE):
             return
         self.cooldowns.record("status", ctx.author.id)
@@ -176,7 +163,7 @@ class ActivityCommands:
                 )
             ).scalar_one_or_none()
             macro_label = (
-                await self._format_macro(db, macro_event) if macro_event else "Just streaming"
+                await format_macro_event(db, macro_event) if macro_event else MACRO_FALLBACK
             )
         has_task = task_event and task_event.notes and task_event.notes.lower() != TASK_DONE
         if has_task:

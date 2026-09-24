@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from couchd.core.constants import StreamDefaults
+from couchd.core.constants import Platform, StreamDefaults
 from couchd.platforms.discord.cogs.streams import StreamWatcherCog
 
 _GET_SESSION = "couchd.platforms.discord.cogs.streams.get_session"
@@ -40,6 +40,21 @@ def _discord_channel():
     msg.create_thread = AsyncMock(return_value=thread)
     channel.send = AsyncMock(return_value=msg)
     return channel
+
+
+async def test_non_twitch_stream_online_is_ignored(cog):
+    """A YouTube go-live must not announce a Twitch stream or claim the Twitch slot."""
+    get_session_cm, session = _session_yielding(new_id=5)
+    channel = _discord_channel()
+    cog._get_stream_channel = AsyncMock(return_value=channel)
+
+    with patch(_GET_SESSION, get_session_cm):
+        await cog.handle_stream_start(
+            {"title": "YouTube Stream", "category": "", "platform": Platform.YOUTUBE.value}
+        )
+
+    channel.send.assert_not_called()
+    session.execute.assert_not_called()
 
 
 async def test_winning_claim_posts_and_updates(cog):
@@ -188,7 +203,7 @@ _NOTIFY = "couchd.platforms.discord.cogs.streams.content_os_client.notify_sessio
 
 
 async def test_handle_stream_end_renders_final_and_notifies(cog):
-    ss = MagicMock(id=42, is_active=True)
+    ss = MagicMock(id=42, is_active=True, platform=Platform.TWITCH.value)
     get_session_cm, _ = _session_first(ss)
     cog._get_stream_channel = AsyncMock(return_value=MagicMock())
     with patch(_GET_SESSION, get_session_cm), \
@@ -211,7 +226,7 @@ async def test_handle_stream_end_missing_session_skips_everything(cog):
 
 
 async def test_handle_stream_end_notifies_even_without_channel(cog):
-    ss = MagicMock(id=42, is_active=True)
+    ss = MagicMock(id=42, is_active=True, platform=Platform.TWITCH.value)
     get_session_cm, _ = _session_first(ss)
     cog._get_stream_channel = AsyncMock(return_value=None)
     with patch(_GET_SESSION, get_session_cm), \

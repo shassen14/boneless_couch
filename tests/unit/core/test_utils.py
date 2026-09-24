@@ -2,9 +2,21 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from couchd.core.constants import InteractionType, Platform
-from couchd.core.models import StreamSession, ViewerInteraction
-from couchd.core.utils import compute_vod_timestamp, get_active_session, get_overlay_stats
+from couchd.core.constants import EventType, InteractionType, Platform
+from couchd.core.models import (
+    CFProblemAttempt,
+    ProblemAttempt,
+    ProjectLog,
+    StreamEvent,
+    StreamSession,
+    ViewerInteraction,
+)
+from couchd.core.utils import (
+    compute_vod_timestamp,
+    format_macro_event,
+    get_active_session,
+    get_overlay_stats,
+)
 
 _UTC = timezone.utc
 
@@ -152,3 +164,58 @@ async def test_get_overlay_stats_longest_subs_excludes_broadcaster_and_ranks(db_
     assert "teststreamer" not in names
     assert longest[0]["username"] == "loyal"
     assert longest[0]["cumulative_months"] == 3
+
+
+# ── format_macro_event ────────────────────────────────────────────────────────
+
+
+async def _event(db_session, stream_session, event_type, notes=None):
+    event = StreamEvent(session_id=stream_session.id, event_type=event_type, notes=notes)
+    db_session.add(event)
+    await db_session.flush()
+    return event
+
+
+async def test_format_macro_event_project(db_session, stream_session):
+    event = await _event(db_session, stream_session, EventType.PROJECT)
+    db_session.add(ProjectLog(stream_event_id=event.id, title="couchd", url="u", description="d"))
+    await db_session.commit()
+    assert await format_macro_event(db_session, event) == "Working on [couchd]"
+
+
+async def test_format_macro_event_leetcode(db_session, stream_session):
+    event = await _event(db_session, stream_session, EventType.PROBLEM_ATTEMPT)
+    db_session.add(ProblemAttempt(
+        stream_event_id=event.id, slug="two-sum", title="Two Sum",
+        url="u", difficulty="Easy",
+    ))
+    await db_session.commit()
+    assert await format_macro_event(db_session, event) == "Solving [LeetCode: Two Sum]"
+
+
+async def test_format_macro_event_codeforces(db_session, stream_session):
+    """Regression: the YouTube !status used to fall through to the generic branch here."""
+    event = await _event(db_session, stream_session, EventType.CF_PROBLEM)
+    db_session.add(CFProblemAttempt(
+        stream_event_id=event.id, contest_id=1883, index="C",
+        title="Raspberries", url="u",
+    ))
+    await db_session.commit()
+    assert await format_macro_event(db_session, event) == "Solving [CF: Raspberries]"
+
+
+async def test_format_macro_event_missing_detail_row(db_session, stream_session):
+    event = await _event(db_session, stream_session, EventType.CF_PROBLEM)
+    await db_session.commit()
+    assert await format_macro_event(db_session, event) == "Solving [CF problem]"
+
+
+async def test_format_macro_event_simple_activities(db_session, stream_session):
+    for event_type, expected in (
+        (EventType.GAME, "Playing [Celeste]"),
+        (EventType.EDIT, "Editing [Celeste]"),
+        (EventType.TOPIC, "Chatting about [Celeste]"),
+    ):
+        event = await _event(db_session, stream_session, event_type, notes="Celeste")
+        await db_session.commit()
+        assert await format_macro_event(db_session, event) == expected

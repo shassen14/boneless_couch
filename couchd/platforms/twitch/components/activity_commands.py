@@ -4,10 +4,17 @@ from twitchio.ext import commands
 from sqlalchemy import select
 
 from couchd.core.db import get_session
-from couchd.core.models import StreamEvent, ProblemAttempt, ProjectLog, CFProblemAttempt
-from couchd.core.constants import CommandCooldowns, MACRO_EVENT_TYPES, EventType, TASK_DONE
+from couchd.core.models import StreamEvent
+from couchd.core.constants import (
+    CommandCooldowns,
+    MACRO_EVENT_TYPES,
+    EventType,
+    TASK_DONE,
+    STATUS_ALIASES,
+    MACRO_FALLBACK,
+)
 from couchd.platforms.twitch.components.cooldowns import CooldownManager
-from couchd.core.utils import get_active_session
+from couchd.core.utils import get_active_session, format_macro_event
 
 log = logging.getLogger(__name__)
 
@@ -67,46 +74,6 @@ class ActivityCommands(commands.Component):
         except Exception:
             log.error("DB error logging %s", event_type, exc_info=True)
             await ctx.reply("❌ Failed to save to DB.")
-
-    async def _format_macro(self, db, event: StreamEvent) -> str:
-        if event.event_type == EventType.CF_PROBLEM:
-            cf = (
-                await db.execute(
-                    select(CFProblemAttempt).where(
-                        CFProblemAttempt.stream_event_id == event.id
-                    )
-                )
-            ).scalar_one_or_none()
-            return (
-                f"Solving [CF: {cf.title}]" if cf else "Solving [CF problem]"
-            )
-        if event.event_type == EventType.PROBLEM_ATTEMPT:
-            attempt = (
-                await db.execute(
-                    select(ProblemAttempt).where(
-                        ProblemAttempt.stream_event_id == event.id
-                    )
-                )
-            ).scalar_one_or_none()
-            return (
-                f"Solving [LeetCode: {attempt.title}]"
-                if attempt
-                else "Solving [LeetCode problem]"
-            )
-        if event.event_type == EventType.PROJECT:
-            proj = (
-                await db.execute(
-                    select(ProjectLog).where(ProjectLog.stream_event_id == event.id)
-                )
-            ).scalar_one_or_none()
-            return f"Working on [{proj.title}]" if proj else "Working on [project]"
-        labels = {
-            EventType.GAME: "Playing",
-            EventType.EDIT: "Editing",
-            EventType.TOPIC: "Chatting about",
-        }
-        prefix = labels.get(event.event_type, event.event_type.capitalize())
-        return f"{prefix} [{event.notes}]"
 
     # ------------------------------------------------------------------
     # !game / !edit / !topic  (macro subjects)
@@ -188,9 +155,9 @@ class ActivityCommands(commands.Component):
     # !status  (macro + micro in one reply)
     # ------------------------------------------------------------------
 
-    @commands.command(name="status")
+    @commands.command(name="status", aliases=list(STATUS_ALIASES))
     async def status_command(self, ctx: commands.Context):
-        """!status — show current macro subject and active task."""
+        """!status (!what, !wyd, !doing) — show current macro subject and active task."""
         if self.cooldowns.check("status", ctx.author.id, CommandCooldowns.SIMPLE):
             return
         self.cooldowns.record("status", ctx.author.id)
@@ -222,9 +189,7 @@ class ActivityCommands(commands.Component):
                 )
             ).scalar_one_or_none()
             macro_label = (
-                await self._format_macro(db, macro_event)
-                if macro_event
-                else "Just streaming"
+                await format_macro_event(db, macro_event) if macro_event else MACRO_FALLBACK
             )
         has_task = task_event and task_event.notes and task_event.notes.lower() != TASK_DONE
         if has_task:

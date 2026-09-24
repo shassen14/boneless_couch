@@ -1,20 +1,22 @@
 # couchd/platforms/youtube/main.py
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-
-from sqlalchemy import text
 
 import sentry_sdk
 from couchd.core.config import settings
 from couchd.core.logger import setup_logging
 from couchd.core.db import get_session
 from couchd.core.models import StreamSession
-from couchd.core.constants import Platform
+from couchd.core.constants import Platform, YouTubeChatConfig
 from google.auth.exceptions import RefreshError
 from couchd.core.clients.youtube_chat import YouTubeChatClient
+from couchd.core.clients.youtube_chat_stream import (
+    YouTubeChatStream,
+    StreamEnded,
+    StreamUnsupported,
+)
 from couchd.core.clients.youtube import YouTubeRSSClient
 from couchd.core.clients.leetcode import LeetCodeClient
 from couchd.core.clients.github import GitHubClient
@@ -80,10 +82,12 @@ class YouTubeBot:
         self.github_client = GitHubClient()
         self.youtube_client = YouTubeRSSClient() if settings.YOUTUBE_CHANNEL_ID else None
         self.mod_engine = ModerationEngine(settings.MODERATION_PATTERNS)
+        self.chat_stream = YouTubeChatStream(self.chat_client)
 
         self._components: list = []
         self._live_chat_id: str | None = None
         self._page_token: str | None = None
+        self._streaming = True
         self.chat_timers = ChatTimers(self)
 
     def _setup_components(self):
@@ -172,6 +176,32 @@ class YouTubeBot:
                 except Exception:
                     log.error("Error in on_message handler", exc_info=True)
 
+    async def _chat_loop(self) -> None:
+        """Consume live chat over the streamList gRPC stream, falling back to polling."""
+        while True:
+            if not self._streaming:
+                await self._poll_loop()
+                return
+            live_chat_id = self._live_chat_id
+            if not live_chat_id:
+                await asyncio.sleep(YouTubeChatConfig.IDLE_SLEEP_SECONDS)
+                continue
+            try:
+                async for message in self.chat_stream.messages(live_chat_id):
+                    await self._dispatch(message)
+            except StreamUnsupported as err:
+                log.warning("streamList unavailable (%s) — falling back to polling.", err)
+                self._streaming = False
+            except StreamEnded:
+                log.info("YouTube live chat ended.")
+                self._live_chat_id = None
+            except RefreshError:
+                log.critical("YouTube OAuth token revoked — restart the bot after re-authenticating.")
+                await asyncio.sleep(3600)
+            except Exception:
+                log.error("Error in YouTube chat stream", exc_info=True)
+                await asyncio.sleep(YouTubeChatConfig.STREAM_RETRY_SECONDS)
+
     async def _poll_loop(self) -> None:
         while True:
             try:
@@ -231,7 +261,11 @@ class YouTubeBot:
             await self.chat_client.send_message(self._live_chat_id, text)
 
     async def _broadcast_lifecycle_loop(self) -> None:
-        """Polls for broadcast start/end and mirrors the Twitch pg_notify pattern."""
+        """Polls for broadcast start/end to open and close the YouTube StreamSession.
+
+        Deliberately does NOT pg_notify: go-live announcements are Twitch-only, and the
+        Discord listener treats any stream_online as a Twitch stream.
+        """
         was_live = False
         while True:
             try:
@@ -242,6 +276,7 @@ class YouTubeBot:
                     log.info("YouTube broadcast started. Live chat ID: %s", chat_id)
                     self._live_chat_id = chat_id
                     self._page_token = None
+                    self.chat_stream.reset()
                     async with get_session() as db:
                         existing = await get_active_session(Platform.YOUTUBE)
                         if not existing:
@@ -252,14 +287,13 @@ class YouTubeBot:
                                 start_time=datetime.now(timezone.utc),
                             ))
                             await db.flush()
-                            notify_payload = json.dumps({"title": "YouTube Stream", "category": "", "thumbnail_url": ""})
-                            await db.execute(text("SELECT pg_notify('stream_online', :p)"), {"p": notify_payload})
                     was_live = True
 
                 elif not is_live and was_live:
                     log.info("YouTube broadcast ended.")
                     self._live_chat_id = None
                     self._page_token = None
+                    self.chat_stream.reset()
                     async with get_session() as db:
                         from sqlalchemy import select
                         result = await db.execute(
@@ -272,10 +306,6 @@ class YouTubeBot:
                         if session:
                             session.is_active = False
                             session.end_time = datetime.now(timezone.utc)
-                            await db.execute(
-                                text("SELECT pg_notify('stream_offline', :p)"),
-                                {"p": json.dumps({"session_id": session.id})},
-                            )
                     was_live = False
 
             except RefreshError:
@@ -301,7 +331,7 @@ class YouTubeBot:
 
         self.chat_timers.start()
         await asyncio.gather(
-            self._poll_loop(),
+            self._chat_loop(),
             self._broadcast_lifecycle_loop(),
             veil.listen_decisions(self._on_modqueue_decision, on_chat_send=self._on_chat_send),
         )

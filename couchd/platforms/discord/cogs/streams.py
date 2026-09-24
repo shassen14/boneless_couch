@@ -150,6 +150,14 @@ class StreamWatcherCog(commands.Cog):
             log.error("Error in startup live check", exc_info=True)
 
     async def handle_stream_start(self, data: dict):
+        # This path creates a Twitch StreamSession and links to twitch.tv, so a notify
+        # from any other platform would announce a Twitch stream that is not live and
+        # occupy the one active-Twitch-session slot.
+        platform = data.get("platform", Platform.TWITCH.value)
+        if platform != Platform.TWITCH.value:
+            log.info("Ignoring %s stream_online — announcements are Twitch-only.", platform)
+            return
+
         title = data.get("title") or StreamDefaults.TITLE.value
         category = data.get("category") or StreamDefaults.CATEGORY.value
         stream_url = f"{TwitchConfig.BASE_URL}{self.channel}"
@@ -303,6 +311,12 @@ class StreamWatcherCog(commands.Cog):
 
                 if stream_session is None:
                     log.warning("handle_stream_end: session not found (id=%s).", session_id)
+                    return
+                if stream_session.platform != Platform.TWITCH.value:
+                    log.info(
+                        "Ignoring %s session %s — recaps are Twitch-only.",
+                        stream_session.platform, session_id,
+                    )
                     return
                 ended_session_id = stream_session.id
                 session_start = stream_session.start_time

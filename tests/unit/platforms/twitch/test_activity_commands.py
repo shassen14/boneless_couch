@@ -3,9 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
-
 from couchd.core.constants import EventType, TASK_DONE
-from couchd.core.models import ProjectLog, StreamEvent
+from couchd.core.models import StreamEvent
 from couchd.platforms.twitch.components.activity_commands import ActivityCommands
 
 _MOD = "couchd.platforms.twitch.components.activity_commands"
@@ -146,24 +145,3 @@ async def test_status_macro_and_task(cog, get_session_fn, db_session, stream_ses
          patch(f"{_MOD}.get_session", get_session_fn):
         await _run(cog, "status_command", ctx)
     ctx.reply.assert_awaited_once_with("Current Status: Playing [Factorio] ➔ Task: build base")
-
-
-# ── _format_macro ─────────────────────────────────────────────────────────────
-
-async def test_format_macro_project(cog, get_session_fn, db_session, stream_session):
-    db_session.add(StreamEvent(id=None, session_id=stream_session.id, event_type=EventType.PROJECT))
-    await db_session.flush()
-    event = (await db_session.execute(select(StreamEvent))).scalars().first()
-    db_session.add(ProjectLog(stream_event_id=event.id, title="couchd", url="u", description="d"))
-    await db_session.commit()
-
-    label = await cog._format_macro(db_session, event)
-    assert label == "Working on [couchd]"
-
-
-async def test_format_macro_simple_game(cog, db_session, stream_session):
-    event = StreamEvent(session_id=stream_session.id, event_type=EventType.GAME, notes="Celeste")
-    db_session.add(event)
-    await db_session.commit()
-    label = await cog._format_macro(db_session, event)
-    assert label == "Playing [Celeste]"
